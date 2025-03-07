@@ -170,13 +170,13 @@ class AIService:
             self._log_error(f"Erro ao criar fluxo: {str(e)}")
             return None
     
-    def run_flow(self, flow: Dict[str, Any], input_data: Dict[str, Any], with_streaming: bool = False):
+    def run_flow(self, flow, input_data, with_streaming=False):
         """
-        Executa um fluxo para geração de texto.
+        Executa um fluxo de geração com os parâmetros fornecidos.
         
         Args:
-            flow: O fluxo configurado
-            input_data: Dados para preencher o template de prompt
+            flow: Fluxo a ser executado (dicionário com configurações)
+            input_data: Dados para preencher o prompt template
             with_streaming: Se deve usar streaming para mostrar resultados progressivamente
             
         Returns:
@@ -206,12 +206,27 @@ class AIService:
             # Configurações de geração
             generation_config = flow.get("generation_config", {})
             
+            # Verificar se há imagem nos dados de entrada
+            image = input_data.get("image")
+            
             if with_streaming:
                 # Usar streaming para mostrar resultados progressivamente
-                return self._run_with_streaming(model, prompt, generation_config)
+                if image:
+                    # Para execução com streaming e imagem
+                    return self._run_with_streaming_multimodal(model, prompt, image, generation_config)
+                else:
+                    # Para execução com streaming sem imagem
+                    return self._run_with_streaming(model, prompt, generation_config)
             else:
                 # Gerar conteúdo sem streaming
-                response = model.generate_content(prompt, generation_config=generation_config)
+                if image:
+                    # Criar conteúdo multimodal com texto e imagem
+                    content = [prompt, image]
+                    response = model.generate_content(content, generation_config=generation_config)
+                else:
+                    # Apenas texto
+                    response = model.generate_content(prompt, generation_config=generation_config)
+                
                 return response.text
         except Exception as e:
             self._log_error(f"Erro ao executar fluxo: {str(e)}")
@@ -256,6 +271,51 @@ class AIService:
                 pass
         
         return full_response
+    
+    def _run_with_streaming_multimodal(self, model, prompt, image, generation_config):
+        """
+        Executa a geração com streaming para atualização progressiva com imagem.
+        
+        Args:
+            model: Modelo a ser usado
+            prompt: Prompt formatado
+            image: Imagem em formato compatível com o modelo
+            generation_config: Configuração para geração
+            
+        Returns:
+            O texto gerado
+        """
+        placeholder = st.empty()
+        full_response = ""
+        
+        # Criar conteúdo multimodal
+        content = [prompt, image]
+        
+        # Iniciar geração com streaming
+        try:
+            for chunk in model.generate_content(
+                content,
+                generation_config=generation_config,
+                stream=True
+            ):
+                try:
+                    # Extrair texto do chunk
+                    chunk_text = chunk.text
+                    
+                    # Adicionar ao texto completo
+                    full_response += chunk_text
+                    
+                    # Atualizar a visualização
+                    placeholder.markdown(full_response)
+                    
+                except Exception as e:
+                    self._log_error(f"Erro ao processar chunk: {str(e)}")
+            
+            # Retornar a resposta completa
+            return full_response
+        except Exception as e:
+            self._log_error(f"Erro ao executar streaming com imagem: {str(e)}")
+            return f"Erro ao processar imagem: {str(e)}"
     
     def generate_task_suggestions(self, description: str, with_streaming: bool = False):
         """
@@ -351,7 +411,7 @@ class AIService:
         flow = self.create_flow(
             name="text_generation",
             prompt_template="{prompt}",
-            model="gemini-1.5-flash" if not image else "gemini-pro-vision",
+            model="gemini-1.5-flash",  # Sempre usar gemini-1.5-flash (funciona para texto e imagem)
             max_output_tokens=max_tokens
         )
         
@@ -359,5 +419,15 @@ class AIService:
             return "Erro: Não foi possível criar o fluxo"
         
         # Executar o fluxo
-        # Nota: O processamento de imagem precisa ser implementado separadamente
-        return self.run_flow(flow, {"prompt": prompt}) 
+        input_data = {"prompt": prompt}
+        
+        # Adicionar imagem ao input se fornecida
+        if image:
+            try:
+                # Preparar dados de imagem para o modelo gemini-1.5-flash
+                if image is not None:  # Verificação extra para o tipo
+                    input_data["image"] = image
+            except Exception as e:
+                self._log_error(f"Erro ao processar imagem: {str(e)}")
+        
+        return self.run_flow(flow, input_data) 
