@@ -7,10 +7,13 @@ import asyncio
 import time
 import io
 import uuid
+import json
+import logging
+import re
 
 from task_service import TaskService
 from firebase_service import FirebaseService
-from gemini_service import GeminiService
+from ai_service import AIService
 from task import Task
 
 # Função para inicializar o estado da sessão
@@ -38,12 +41,56 @@ def init_session_state():
         st.session_state.first_load = True
     if "new_tasks_count" not in st.session_state:
         st.session_state.new_tasks_count = 0
+        
+    # Garantir que serviços estejam inicializados
+    if "services" not in st.session_state:
+        from task_service import TaskService
+        from firebase_service import FirebaseService
+        from ai_service import AIService
+        
+        # Inicializar serviços com a chave da API do .env
+        import os
+        from dotenv import load_dotenv
+        
+        # Carregar variáveis de ambiente do .env
+        load_dotenv()
+        
+        # Obter a chave da API Gemini do .env
+        api_key = os.environ.get("GEMINI_API_KEY")
+        
+        # Verificar se DEBUG está ativado
+        debug_mode = os.environ.get("DEBUG", "False").lower() == "true"
+        
+        # Inicializar serviços
+        st.session_state.services = {
+            "ai": AIService(api_key=api_key, debug_mode=debug_mode),
+            "firebase": FirebaseService(),
+            "task": TaskService()
+        }
 
-# Gerar plano usando o Gemini
+# Garantir acesso aos serviços
+def get_services():
+    """
+    Garante que os serviços estejam inicializados antes de acessá-los.
+    """
+    # Verificar se os serviços já estão inicializados
+    if "services" not in st.session_state:
+        # Inicializar o estado da sessão (que inclui os serviços)
+        init_session_state()
+    
+    return st.session_state.services
+
+# Gerar plano usando a API de IA
 def generate_plan(prompt, image=None):
     st.session_state.plan_loading = True
     
-    gemini_service = GeminiService()
+    # Usar o serviço de IA da sessão
+    services = get_services()
+    ai_service = services.get("ai")
+    if not ai_service:
+        # Criar uma instância temporária se não estiver disponível
+        from ai_service import AIService
+        ai_service = AIService()
     
     try:
         # Preparar o prompt
@@ -106,9 +153,9 @@ def generate_plan(prompt, image=None):
         
         # Gerar resposta
         if img_data:
-            response = gemini_service.generate_text(formatted_prompt, max_tokens=1024, image=img_data)
+            response = ai_service.generate_text(formatted_prompt, max_tokens=1024, image=img_data)
         else:
-            response = gemini_service.generate_text(formatted_prompt, max_tokens=1024)
+            response = ai_service.generate_text(formatted_prompt, max_tokens=1024)
         
         # Limpar indicadores de progresso
         progress_bar.empty()
@@ -127,248 +174,438 @@ def generate_plan(prompt, image=None):
 
 # Função para criar tarefa a partir do plano
 def create_tasks_from_plan():
-    if not st.session_state.plan_result:
-        st.warning("Nenhum plano gerado para criar tarefas")
-        return False
+    """
+    Cria tarefas a partir do plano gerado.
+    """
+    if "plan_result" not in st.session_state or not st.session_state.plan_result:
+        st.error("Não há plano gerado para criar tarefas")
+        return
     
-    # Extrair tarefas do plano
+    # Parse do plano em texto
     plan_text = st.session_state.plan_result
     
     try:
-        # Extrair o título do plano - procurar por linhas numeradas ou seções de título
-        lines = plan_text.split('\n')
-        title_candidates = []
-        
-        # Procurar por possíveis linhas de título
-        for line in lines:
-            line = line.strip()
-            # Linhas que parecem ser títulos (não iniciadas por símbolos e com texto significativo)
-            if (line and 
-                not line.startswith('-') and 
-                not line.startswith('*') and 
-                not line.startswith('#') and
-                len(line) > 5):
-                title_candidates.append(line)
+        # Extrair título do plano
+        title_candidates = re.findall(r'^(\d+\.\s*)?([^\n]+)', plan_text)
+        title_candidates = [t[1].strip() for t in title_candidates if t[1].strip()]
         
         # Escolher o título mais adequado
-        main_title = "Plano gerado pelo Gemini"
+        main_title = "Plano gerado pela IA"
         if title_candidates:
             # Prefira títulos com palavras como "plano", "planejamento", etc.
-            for candidate in title_candidates:
-                if any(word in candidate.lower() for word in ["plano", "planejamento", "projeto", "tarefa"]):
-                    main_title = candidate
+            for title in title_candidates:
+                lower_title = title.lower()
+                if ("plano" in lower_title or "planejamento" in lower_title or 
+                    "projeto" in lower_title or "organização" in lower_title):
+                    main_title = title
                     break
             
             # Se não encontrou nenhum com as palavras-chave, use o primeiro
-            if main_title == "Plano gerado pelo Gemini" and title_candidates:
+            if main_title == "Plano gerado pela IA" and title_candidates:
                 main_title = title_candidates[0]
         
-        # Extrair tarefas principais e subtarefas
-        subtask_lines = []
-        for i, line in enumerate(lines):
-            line = line.strip()
-            # Procurar por linhas que começam com '-' ou '*' (marcadores de lista)
-            if line.startswith('-') or line.startswith('*'):
-                # Remover o marcador e espaços extras
-                task_text = line[1:].strip()
-                if task_text and len(task_text) > 3:  # Ignorar itens vazios ou muito curtos
-                    subtask_lines.append(task_text)
+        # Extrair tarefas principais e suas subtarefas
+        task_blocks = re.findall(r'(\d+\.\s*[^\n]+)((?:\s*-\s*[^\n]+\n*)+)', plan_text)
         
-        # Procurar também por linhas numeradas (tarefas principais)
-        for i, line in enumerate(lines):
-            line = line.strip()
-            # Padrão "1. Tarefa" ou "1) Tarefa"
-            if (line and (line[0].isdigit() and len(line) > 3) and 
-                ('.' in line[:3] or ')' in line[:3])):
-                task_text = line[line.find('.')+1:].strip() if '.' in line[:3] else line[line.find(')')+1:].strip()
-                if task_text and len(task_text) > 3:
-                    subtask_lines.append(task_text)
+        if not task_blocks:
+            st.warning("Não foi possível identificar tarefas no plano gerado")
+            return
         
-        # Limitar a 10 subtarefas
-        if len(subtask_lines) > 10:
-            subtask_lines = subtask_lines[:10]
+        # Para cada tarefa, extrair o título e as subtarefas
+        tasks_to_create = []
         
-        # Se não encontrou subtarefas, criar algumas genéricas
-        if len(subtask_lines) < 3:
-            subtask_lines = [
-                "Definir objetivos e requisitos",
-                "Coletar recursos necessários",
-                "Implementar solução"
-            ]
+        for task_title, subtasks_text in task_blocks:
+            # Limpar o título da tarefa
+            task_title = re.sub(r'^\d+\.\s*', '', task_title).strip()
+            
+            # Extrair subtarefas
+            subtask_lines = re.findall(r'-\s*([^\n]+)', subtasks_text)
+            subtask_lines = [s.strip() for s in subtask_lines if s.strip()]
+            
+            # Criar estrutura da tarefa
+            task = {
+                "title": task_title,
+                "description": f"Parte do plano: {main_title}",
+                "priority": "média",
+                "completed": False,
+                "subtasks": [
+                    {"title": st, "description": "", "completed": False} 
+                    for st in subtask_lines
+                ]
+            }
+            
+            tasks_to_create.append(task)
         
-        # Criar tarefa com as subtarefas extraídas
-        task_service = TaskService()
-        result = task_service.add_task_with_subtasks(
-            title=main_title,
-            subtask_titles=subtask_lines,
-            due_date=datetime.now(),
-            priority="Média"
-        )
+        # Obter o serviço de tarefas
+        task_service = get_services().get("task")
         
-        if result:
-            # Atualizar a contagem de novas tarefas
-            st.session_state.new_tasks_count += 1
-            
-            # Definir flag para rolar até a seção de tarefas
-            st.session_state.scroll_to_tasks = True
-            
-            # Limpar a flag de scroll para plano gerado
-            st.session_state.scroll_to_plan = False
-            
-            st.success(f"Tarefa '{main_title}' criada com sucesso!")
-            
-            # Atualizar lista de tarefas
-            load_tasks()
-            
-            return True
-        else:
-            st.error("Falha ao criar tarefa a partir do plano")
-            return False
+        if not task_service:
+            st.error("Serviço de tarefas não disponível")
+            return
+        
+        # Adicionar as tarefas
+        for task in tasks_to_create:
+            task_service.add_task(task)
+        
+        # Mostrar mensagem de sucesso
+        st.success(f"{len(tasks_to_create)} tarefas adicionadas com sucesso!")
+        
+        # Marcar que não estamos mais criando tarefas deste plano
+        st.session_state.creating_tasks_from_plan = False
+        st.session_state.plan_result = None
+        
+        # Recarregar tarefas
+        load_tasks()
     except Exception as e:
-        st.error(f"Erro ao processar plano: {str(e)}")
-        return False
+        st.error(f"Erro ao criar tarefas do plano: {str(e)}")
 
 def delete_task(task_id):
     """
-    Exclui uma tarefa ou subtarefa com base no ID fornecido.
+    Exclui uma tarefa ou subtarefa.
     
     Args:
-        task_id: ID da tarefa ou subtarefa a ser excluída. Pode ser um ID (string) ou um objeto tarefa.
+        task_id: ID da tarefa ou subtarefa
     """
-    # Se for um objeto tarefa, extrair o ID
-    if isinstance(task_id, dict) and "maintask" in task_id:
-        task_id = task_id["maintask"].get("id", "")
+    # Obter o serviço de tarefas
+    services = get_services()
+    task_service = services.get("task")
     
-    # Verificar se o ID é válido
-    if not task_id or not isinstance(task_id, str):
-        st.error("ID de tarefa inválido")
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
         return
     
-    task_service = TaskService()
     try:
-        # Verifica se é um ID de subtarefa ou de tarefa principal
-        # Procurar primeiro nas subtarefas
-        for task in st.session_state.tasks:
-            maintask = task["maintask"]
-            subtasks = task.get("subtasks", [])
-            
-            # Verificar se o ID está nas subtarefas
-            subtask_found = False
-            for i, subtask in enumerate(subtasks):
-                if subtask.get("id") == task_id:
-                    # Encontrou a subtarefa, vamos removê-la
-                    subtasks.pop(i)
-                    
-                    # Atualizar a tarefa principal
-                    task_service.update_task(
-                        maintask.get("id", ""), 
-                        {"subtasks": subtasks}
-                    )
-                    
-                    # Excluir a subtarefa do Firebase também
-                    task_service.firebase.delete_document(task_service.collection_name, task_id)
-                    
-                    # Não mostrar mensagem, apenas recarregar as tarefas
-                    load_tasks()
-                    subtask_found = True
-                    break
-            
-            if subtask_found:
-                return  # Subtarefa foi encontrada e removida
+        # Excluir tarefa
+        result = task_service.delete_task(task_id)
         
-        # Se chegou aqui, não é uma subtarefa, então é uma tarefa principal
-        result = task_service.delete_task_with_subtasks(task_id)
         if result:
             st.success("Tarefa excluída com sucesso!")
+            # Recarregar tarefas
             load_tasks()
         else:
-            st.error("Falha ao excluir tarefa")
-    
+            st.error("Não foi possível excluir a tarefa")
     except Exception as e:
         st.error(f"Erro ao excluir tarefa: {str(e)}")
 
 def toggle_task_completed(task_id, current_status):
-    task_service = TaskService()
+    # Obter o serviço de tarefas
+    services = get_services()
+    task_service = services.get("task")
+    
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
+        return
+    
     try:
         new_status = not current_status
-        result = task_service.update_task(task_id, {"completed": new_status})
         
-        if result:
-            # Atualizar estado local
-            for task in st.session_state.tasks:
-                if task["maintask"].get("id") == task_id:
-                    task["maintask"]["completed"] = new_status
-            
+        # Localizar a tarefa e atualizar seu status
+        found = False
+        for task in st.session_state.tasks:
+            if 'maintask' in task and task['maintask'].get("id") == task_id:
+                # Formato antigo
+                task['maintask']["completed"] = new_status
+                result = task_service.update_task(task_id, task)
+                found = True
+                break
+            elif task.get("id") == task_id:
+                # Novo formato
+                task["completed"] = new_status
+                result = task_service.update_task(task_id, task)
+                found = True
+                break
+        
+        if found:
             st.success(f"Tarefa {'concluída' if new_status else 'reaberta'} com sucesso!")
             st.rerun()
         else:
-            st.error("Falha ao atualizar status da tarefa")
+            st.error("Tarefa não encontrada")
     except Exception as e:
         st.error(f"Erro ao atualizar tarefa: {str(e)}")
 
 def complete_subtask(task_id, subtask_id, current_status):
-    task_service = TaskService()
+    # Obter o serviço de tarefas
+    services = get_services()
+    task_service = services.get("task")
+    
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
+        return
+    
     try:
         new_status = not current_status
-        result = task_service.update_task(subtask_id, {"completed": new_status})
         
-        if result:
-            # Atualizar estado local e verificar se todas subtarefas estão concluídas
-            all_subtasks_completed = True
+        # Localizar a tarefa principal e a subtarefa
+        for task in st.session_state.tasks:
+            task_found = False
             
-            for task in st.session_state.tasks:
-                if task["maintask"].get("id") == task_id:
-                    # Atualizar a subtarefa atual
-                    for subtask in task["subtasks"]:
-                        if subtask.get("id") == subtask_id:
-                            subtask["completed"] = new_status
-                            break
-                    
-                    # Reordenar subtarefas colocando as completas por último
-                    task["subtasks"] = sorted(task["subtasks"], key=lambda x: x.get('completed', False))
-                    
-                    # Verificar se todas as subtarefas estão concluídas
-                    if task["subtasks"]:  # Se existem subtarefas
-                        all_subtasks_completed = all(s.get("completed", False) for s in task["subtasks"])
+            if 'maintask' in task and task['maintask'].get("id") == task_id:
+                # Formato antigo
+                main_task = task['maintask']
+                task_found = True
+            elif task.get("id") == task_id:
+                # Novo formato
+                main_task = task
+                task_found = True
+            
+            if task_found:
+                # Procurar a subtarefa
+                for subtask in task.get("subtasks", []):
+                    if subtask.get("id") == subtask_id:
+                        # Atualizar o status da subtarefa
+                        subtask["completed"] = new_status
                         
-                        # Se todas as subtarefas estiverem concluídas, marcar a tarefa principal também
-                        if all_subtasks_completed and not task["maintask"].get("completed", False):
-                            # Atualizar a tarefa principal para concluída
-                            maintask_id = task["maintask"].get("id", "")
-                            if maintask_id:
-                                task_service.update_task(maintask_id, {"completed": True})
-                                task["maintask"]["completed"] = True
-            
-            st.rerun()
-        else:
-            st.error("Falha ao atualizar status da subtarefa")
+                        # Atualizar a tarefa completa
+                        task_service.update_task(task_id, task)
+                        
+                        # Verificar se todas as subtarefas estão concluídas
+                        if task.get("subtasks"):
+                            all_completed = all(s.get("completed", False) for s in task.get("subtasks", []))
+                            
+                            # Se todas as subtarefas estiverem concluídas, marcar a tarefa principal também
+                            if all_completed:
+                                if 'maintask' in task:
+                                    task['maintask']["completed"] = True
+                                else:
+                                    task["completed"] = True
+                                
+                                task_service.update_task(task_id, task)
+                        
+                        st.success(f"Subtarefa {'concluída' if new_status else 'reaberta'} com sucesso!")
+                        st.rerun()
+                        return
+                
+        st.warning("Subtarefa não encontrada")
     except Exception as e:
         st.error(f"Erro ao atualizar subtarefa: {str(e)}")
 
 def load_tasks():
-    task_service = TaskService()
+    """
+    Carrega as tarefas do sistema usando o TaskService.
+    """
+    # Garantir que os serviços estejam disponíveis
+    services = get_services()
+    
+    # Obter o serviço de tarefas
+    task_service = services.get("task")
+    
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
+        return
+    
     try:
-        # Buscar tarefas principais
-        main_tasks = task_service.get_all_tasks()
-        tasks_with_subtasks = []
-        
-        # Para cada tarefa principal, buscar suas subtarefas
-        for task in main_tasks:
-            subtasks = task_service.get_subtasks(task.get("id", ""))
-            tasks_with_subtasks.append({
-                "maintask": task,
-                "subtasks": subtasks
-            })
-        
-        st.session_state.tasks = tasks_with_subtasks
+        # Carregar tarefas
+        tasks = task_service.load_tasks()
+        st.session_state.tasks = tasks  # Lista de tarefas já no formato adequado
+        return tasks
     except Exception as e:
         st.error(f"Erro ao carregar tarefas: {str(e)}")
-        st.session_state.tasks = []
+        return []
+
+def generate_planning_tasks(user_description, image=None, task_service=None):
+    """
+    Gera um plano de tarefas a partir de uma descrição do usuário usando a API de IA.
+    
+    Args:
+        user_description: Descrição do projeto ou plano
+        image: Imagem enviada pelo usuário (opcional)
+        task_service: Instância do serviço de tarefas
+    
+    Returns:
+        O resultado processado em formato de tarefas
+    """
+    # Usar o serviço de IA para gerar o plano
+    services = get_services()
+    ai_service = services.get("ai")
+    if not ai_service:
+        # Criar uma instância temporária se não estiver disponível
+        from ai_service import AIService
+        ai_service = AIService()
+    
+    # Processar imagem se houver
+    img_data = None
+    if image is not None:
+        # Converter para base64
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG")
+        img_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    
+    # Construir prompt baseado no tipo de entrada
+    prompt_base = """
+    Você é um assistente especializado em organizar tarefas. Com base nas informações fornecidas, 
+    crie um plano detalhado com tarefas, subtarefas e um cronograma. 
+    
+    Informações fornecidas:
+    
+    {info}
+    
+    Retorne APENAS o JSON a seguir, sem qualquer explicação adicional:
+    
+    ```json
+    {
+        "title": "Título geral do plano",
+        "description": "Descrição resumida do plano",
+        "tasks": [
+            {
+                "title": "Título da tarefa 1",
+                "description": "Descrição detalhada",
+                "priority": "alta|média|baixa",
+                "subtasks": [
+                    {"title": "Subtarefa 1.1", "description": "Descrição da subtarefa"}
+                ]
+            }
+        ]
+    }
+    ```
+    """
+    
+    formatted_prompt = prompt_base.format(info=user_description)
+    
+    # Fazer a chamada para o modelo
+    start_time = time.time()
+    with st.spinner("Gerando plano..."):
+        try:
+            if img_data:
+                # Usar o fluxo de texto com imagem
+                response = ai_service.generate_text(formatted_prompt, max_tokens=1024, image=img_data)
+            else:
+                # Usar o fluxo de texto simples
+                response = ai_service.generate_text(formatted_prompt, max_tokens=1024)
+                
+            # Log do tempo de resposta
+            elapsed_time = time.time() - start_time
+            logging.info(f"Tempo de resposta da IA: {elapsed_time:.2f} segundos")
+        except Exception as e:
+            st.error(f"Erro ao gerar o plano: {str(e)}")
+            logging.error(f"Erro na API de IA: {str(e)}")
+            return None
+    
+    # Processar a resposta
+    if not response:
+        st.error("Não foi possível gerar um plano. Tente novamente com uma descrição mais detalhada.")
+        return None
+    
+    # Parsear o JSON da resposta
+    try:
+        # Tentar extrair JSON da resposta
+        json_match = re.search(r'```json(.*?)```', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1).strip()
+        else:
+            json_str = response.strip()
+        
+        # Remover caracteres invisíveis que podem atrapalhar o parsing
+        json_str = json_str.replace('\u200b', '')
+        
+        # Parsear o JSON
+        data = json.loads(json_str)
+        
+        # Adicionar ID para cada tarefa e subtarefa
+        main_title = "Plano gerado pela IA"
+        if "title" in data:
+            main_title = data["title"]
+        
+        # Backup do título no caso de problemas
+        title_candidates = re.findall(r'"title":\s*"([^"]+)"', json_str)
+        if main_title == "Plano gerado pela IA" and title_candidates:
+            main_title = title_candidates[0]
+        
+        # Adicionar data de criação
+        data["created_at"] = datetime.now().isoformat()
+        
+        return data
+    except Exception as e:
+        logging.error(f"Erro ao processar resposta da IA: {str(e)}")
+        logging.debug(f"Resposta recebida: {response[:500]}...")  # Primeiro 500 chars para debug
+        st.error(f"Erro ao processar o plano. Tente novamente. Detalhes: {str(e)}")
+        st.code(response)  # Mostrar a resposta bruta para ajudar no debug
+        return None
 
 # Função principal da página 
 def show_home_page():
     # Inicializar estado da sessão
     init_session_state()
+    
+    # Garantir acesso aos serviços
+    services = get_services()
+    
+    # Barra lateral para configurações
+    with st.sidebar:
+        st.header("Configurações")
+        
+        # Configuração da API
+        with st.expander("API de IA", expanded=True):
+            ai_service = services.get("ai")
+            current_api_key = ai_service.api_key if ai_service and hasattr(ai_service, "api_key") else ""
+            masked_key = "••••••••" + current_api_key[-4:] if current_api_key and len(current_api_key) > 4 else "Não configurada"
+            
+            st.write(f"API Key atual: {masked_key}")
+            
+            # Link para gerar chave API
+            st.markdown("""
+            <div style="margin: 10px 0; padding: 10px; border-radius: 5px; background-color: rgba(70, 130, 180, 0.1); border: 1px solid rgba(70, 130, 180, 0.3);">
+                <a href="https://aistudio.google.com/apikey" target="_blank">🔑 Gerar API Key</a>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            new_api_key = st.text_input(
+                "Nova Chave API",
+                type="password",
+                placeholder="Insira nova chave API se necessário"
+            )
+            
+            model = st.selectbox(
+                "Modelo", 
+                ["gemini-pro", "gemini-pro-vision", "gemini-1.5-flash"],
+                index=2
+            )
+            
+            # Opção para ativar logs de debug
+            debug_mode = st.checkbox("Ativar logs de debug", value=False)
+            if ai_service and debug_mode != getattr(ai_service, "debug_mode", False):
+                ai_service.debug_mode = debug_mode
+                st.success("Modo de debug " + ("ativado" if debug_mode else "desativado"))
+            
+            if new_api_key and st.button("Atualizar API Key"):
+                try:
+                    if ai_service and hasattr(ai_service, "save_config"):
+                        ai_service.save_config(new_api_key, model)
+                        
+                        # Atualizar a variável de ambiente também
+                        import os
+                        os.environ["GEMINI_API_KEY"] = new_api_key
+                        
+                        # Atualizar a session_state também
+                        services["ai"] = ai_service
+                        st.session_state.services = services
+                        
+                        st.success("✅ API key atualizada com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error("Serviço de IA não está disponível")
+                except Exception as e:
+                    st.error(f"❌ Erro ao atualizar API key: {str(e)}")
+        
+        # Status do Sistema
+        with st.expander("Status do Sistema", expanded=False):
+            firebase_service = services.get("firebase")
+            # Status do Firebase
+            firebase_status = "Offline (armazenamento local)" 
+            if firebase_service and not getattr(firebase_service, 'is_offline_mode', True):
+                firebase_status = "Online (conectado ao Firestore)"
+            
+            st.subheader("Firebase")
+            st.info(firebase_status)
+            
+            # Status da API de IA
+            st.subheader("API de IA")
+            if ai_service and hasattr(ai_service, "api_key") and ai_service.api_key:
+                st.success("Conectado")
+            else:
+                st.warning("Chave API não configurada")
+    
+    # Título principal do app
+    st.title("📋 Organizador de Tarefas com IA")
     
     # Carregar tarefas na primeira execução
     if st.session_state.first_load:
@@ -418,15 +655,12 @@ def show_home_page():
     </style>
     """, unsafe_allow_html=True)
     
-    # Título principal do app
-    st.title("📋 Organizador de Tarefas com Gemini")
-    
     # SEÇÃO 1: PLANEJADOR
-    st.header("Planejador de Tarefas")
+    st.header("🧠 Planejamento")
     
     # Texto explicativo e formulário de entrada
     st.markdown("""
-    Descreva o que você precisa planejar e o Gemini criará um plano detalhado de tarefas para você.
+    Descreva o que você precisa planejar e a IA criará um plano detalhado de tarefas para você.
     """)
     
     # Entrada de texto para o prompt do plano
@@ -498,16 +732,35 @@ def show_home_page():
     # Filtrar tarefas com base na visualização selecionada
     filtered_tasks = []
     if selected_view == "Pendentes":
-        filtered_tasks = [t for t in st.session_state.tasks if not t["maintask"].get("completed", False)]
+        filtered_tasks = []
+        for t in st.session_state.tasks:
+            # Verificar o formato da tarefa
+            if 'maintask' in t:
+                # Formato antigo
+                if not t["maintask"].get("completed", False):
+                    filtered_tasks.append(t)
+            else:
+                # Novo formato
+                if not t.get("completed", False):
+                    filtered_tasks.append(t)
     elif selected_view == "Concluídas":
         # Incluir tarefas onde a principal está concluída OU onde pelo menos uma subtarefa está concluída
         filtered_tasks = []
         for t in st.session_state.tasks:
-            main_completed = t["maintask"].get("completed", False)
-            has_completed_subtasks = any(s.get("completed", False) for s in t.get("subtasks", []))
-            
-            if main_completed or has_completed_subtasks:
-                filtered_tasks.append(t)
+            if 'maintask' in t:
+                # Formato antigo
+                main_completed = t["maintask"].get("completed", False)
+                has_completed_subtasks = any(s.get("completed", False) for s in t.get("subtasks", []))
+                
+                if main_completed or has_completed_subtasks:
+                    filtered_tasks.append(t)
+            else:
+                # Novo formato
+                main_completed = t.get("completed", False)
+                has_completed_subtasks = any(s.get("completed", False) for s in t.get("subtasks", []))
+                
+                if main_completed or has_completed_subtasks:
+                    filtered_tasks.append(t)
     else:
         filtered_tasks = st.session_state.tasks
     
@@ -537,31 +790,11 @@ def show_home_page():
     
     with col_delete_all:
         if st.button("🗑️", help="Excluir todas as tarefas"):
-            if len(st.session_state.tasks) > 0:
-                for task in st.session_state.tasks:
-                    task_id = task["maintask"].get("id", "")
-                    if task_id:
-                        task_service = TaskService()
-                        task_service.delete_task_with_subtasks(task_id)
-                st.success("Todas as tarefas foram excluídas!")
-                load_tasks()
-                st.rerun()
-            else:
-                st.info("Não há tarefas para excluir.")
+            show_clear_all_modal()
     
     with col_complete_all:
         if st.button("✅", help="Completar todas as tarefas"):
-            if len(st.session_state.tasks) > 0:
-                for task in st.session_state.tasks:
-                    task_id = task["maintask"].get("id", "")
-                    if task_id and not task["maintask"].get("completed", False):
-                        task_service = TaskService()
-                        task_service.complete_task(task_id)
-                st.success("Todas as tarefas foram marcadas como concluídas!")
-                load_tasks()
-                st.rerun()
-            else:
-                st.info("Não há tarefas para completar.")
+            show_complete_all_modal()
     
     # Adicionar script para rolagem se necessário
     if st.session_state.scroll_to_plan and st.session_state.plan_result:
@@ -620,3 +853,63 @@ def show_home_page():
         st.markdown(js, unsafe_allow_html=True)
         # Resetar a flag após usar
         st.session_state.scroll_to_tasks = False 
+
+def show_clear_all_modal():
+    """
+    Mostra o modal para confirmar a exclusão de todas as tarefas.
+    """
+    services = get_services()
+    task_service = services.get("task")
+    
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
+        return
+    
+    # Modal para confirmar a ação
+    with st.expander("Excluir todas as tarefas", expanded=True):
+        st.warning("⚠️ Esta ação não pode ser desfeita! Todas as tarefas serão excluídas.")
+        
+        if st.button("Confirmar Exclusão", key="confirm_delete_all"):
+            try:
+                # Excluir cada tarefa
+                tasks = task_service.load_tasks()
+                for task in tasks:
+                    task_id = task.get('id')
+                    if task_id:
+                        task_service.delete_task(task_id)
+                        
+                st.success("Todas as tarefas foram excluídas!")
+                load_tasks()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao excluir tarefas: {str(e)}")
+
+def show_complete_all_modal():
+    """
+    Mostra o modal para confirmar a marcação de todas as tarefas como concluídas.
+    """
+    services = get_services()
+    task_service = services.get("task")
+    
+    if not task_service:
+        st.error("Serviço de tarefas não disponível")
+        return
+    
+    # Modal para confirmar a ação
+    with st.expander("Marcar todas como concluídas", expanded=True):
+        st.info("Todas as tarefas não concluídas serão marcadas como concluídas.")
+        
+        if st.button("Confirmar", key="confirm_complete_all"):
+            try:
+                # Marcar cada tarefa como concluída
+                tasks = task_service.load_tasks()
+                for task in tasks:
+                    if not task.get('completed', False):
+                        task['completed'] = True
+                        task_service.update_task(task.get('id'), task)
+                        
+                st.success("Todas as tarefas foram marcadas como concluídas!")
+                load_tasks()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao atualizar tarefas: {str(e)}") 

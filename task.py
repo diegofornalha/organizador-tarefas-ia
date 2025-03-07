@@ -14,8 +14,9 @@ class Task:
         Renderiza um componente de tarefa com suas subtarefas.
         
         Args:
-            task: Dicionário com a tarefa principal e suas subtarefas
-                 {'maintask': {...}, 'subtasks': [...]}
+            task: Dicionário com a tarefa principal e suas subtarefas.
+                 Pode estar no formato antigo {'maintask': {...}, 'subtasks': [...]}
+                 ou no novo formato direto com campos como 'title', 'description' e 'subtasks'
             key_prefix: Prefixo para as chaves dos componentes Streamlit
             can_delete: Se o botão de exclusão deve ser mostrado
             show_generated_with_gemini: Se deve mostrar o rótulo "Gerado pela API Gemini"
@@ -25,13 +26,25 @@ class Task:
         Returns:
             None
         """
-        # Verificar se a tarefa é válida
-        if not task or 'maintask' not in task:
+        # Detectar o formato da tarefa (antigo vs novo)
+        if 'maintask' in task:
+            # Formato antigo: {maintask: {...}, subtasks: [...]}
+            maintask = task['maintask']
+            subtasks = task.get('subtasks', [])
+        else:
+            # Novo formato: a própria task tem campos como 'title', 'description' e 'subtasks'
+            maintask = task  # A tarefa principal é o próprio objeto task
+            subtasks = task.get('subtasks', [])
+        
+        # Verificar se a tarefa principal tem dados válidos
+        if not maintask or not isinstance(maintask, dict):
             st.warning("Tarefa inválida")
             return
         
-        maintask = task['maintask']
-        subtasks = task.get('subtasks', [])
+        # Verificar se temos um título
+        if 'title' not in maintask or not maintask['title']:
+            st.warning("Tarefa inválida - sem título")
+            return
         
         # Definir cores e estilos com base no status da tarefa
         is_completed = maintask.get('completed', False)
@@ -80,6 +93,9 @@ class Task:
             # Área para as ações
             with expander:
                 # Mostrar detalhes da tarefa
+                if maintask.get('description'):
+                    st.write(maintask.get('description'))
+                
                 col_actions = st.container()
                 
                 # Botões de ação para a tarefa principal

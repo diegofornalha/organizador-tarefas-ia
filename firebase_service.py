@@ -159,4 +159,52 @@ class FirebaseService:
         """
         Exclui um documento.
         """
-        return self.local_storage.delete_document(collection_name, document_id) 
+        return self.local_storage.delete_document(collection_name, document_id)
+
+    # Métodos para compatibilidade com o novo TaskService
+    def get_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Recupera todas as tarefas armazenadas.
+        
+        Returns:
+            Lista de tarefas
+        """
+        # Usar a coleção "todos" para compatibilidade com código existente
+        return self.get_documents("todos")
+
+    def add_task(self, task_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Adiciona uma nova tarefa.
+        
+        Args:
+            task_data: Dados da tarefa a ser adicionada
+            
+        Returns:
+            ID da nova tarefa ou None em caso de erro
+        """
+        return self.add_document("todos", task_data)
+
+    def update_task(self, task_id: str, task_data: Dict[str, Any]) -> bool:
+        """
+        Atualiza uma tarefa existente.
+        
+        Args:
+            task_id: ID da tarefa a ser atualizada
+            task_data: Novos dados da tarefa
+            
+        Returns:
+            True se a atualização foi bem-sucedida
+        """
+        return self.update_document("todos", task_id, task_data)
+
+    def delete_task(self, task_id: str) -> bool:
+        """
+        Exclui uma tarefa.
+        
+        Args:
+            task_id: ID da tarefa a ser excluída
+            
+        Returns:
+            True se a exclusão foi bem-sucedida
+        """
+        return self.delete_document("todos", task_id) 

@@ -6,9 +6,14 @@ import asyncio
 from datetime import datetime
 import time
 import io
+import json
+import logging
+import re
+import pandas as pd
+from io import BytesIO
 
 from task_service import TaskService
-from gemini_service import GeminiService
+from ai_service import AIService
 
 # Função para inicializar o estado da sessão
 def init_session_state():
@@ -21,87 +26,113 @@ def init_session_state():
     if "image_uploaded" not in st.session_state:
         st.session_state.image_uploaded = None
 
-# Gerar plano usando o Gemini
-def generate_plan(prompt, image=None):
-    st.session_state.plan_loading = True
-    
-    gemini_service = GeminiService()
-    
+def parse_user_input(input_text):
+    """Parse the user input to extract the main description and any modifications."""
+    return input_text.strip()
+
+def generate_planning(user_description, task_service=None, image=None):
+    """Generate a planning structure using AI assistant."""
     try:
-        # Preparar o prompt
-        formatted_prompt = f"""
-        Crie um plano detalhado de tarefas e subtarefas baseado nesta solicitação: {prompt}
+        # Usar o serviço de IA para gerar o plano
+        ai_service = st.session_state.services.get("ai")
+        if not ai_service:
+            # Criar uma instância temporária se não estiver disponível
+            ai_service = AIService()
+            
+        # Construir prompt baseado no tipo de entrada
+        prompt_base = """
+        Você é um assistente especializado em organizar tarefas. Com base nas informações fornecidas, 
+        crie um plano detalhado com tarefas, subtarefas e um cronograma. 
         
-        ESTRUTURA DA RESPOSTA:
-        1. [TÍTULO DO PLANO]
+        Informações fornecidas:
         
-        Objetivo:
-        - [DESCREVA BREVEMENTE O OBJETIVO]
+        {info}
         
-        Tarefas Principais:
-        1. [TAREFA 1]
-           - [SUBTAREFA 1.1]
-           - [SUBTAREFA 1.2]
-           - [SUBTAREFA 1.3]
-           
-        2. [TAREFA 2]
-           - [SUBTAREFA 2.1]
-           - [SUBTAREFA 2.2]
-           - [SUBTAREFA 2.3]
-           
-        3. [TAREFA 3]
-           - [SUBTAREFA 3.1]
-           - [SUBTAREFA 3.2]
-           - [SUBTAREFA 3.3]
-           
-        Dicas:
-        - [DICA 1]
-        - [DICA 2]
-        - [DICA 3]
+        Retorne APENAS o JSON a seguir, sem qualquer explicação adicional:
+        
+        ```json
+        {
+            "title": "Título geral do plano",
+            "description": "Descrição resumida do plano",
+            "tasks": [
+                {
+                    "title": "Título da tarefa 1",
+                    "description": "Descrição detalhada",
+                    "priority": "alta|média|baixa",
+                    "subtasks": [
+                        {"title": "Subtarefa 1.1", "description": "Descrição da subtarefa"}
+                    ]
+                }
+            ]
+        }
+        ```
         """
         
-        # Converter imagem se houver
+        formatted_prompt = prompt_base.format(info=user_description)
+        
+        # Processar imagem se houver
         img_data = None
         if image is not None:
+            buffered = BytesIO()
+            image.save(buffered, format="JPEG")
+            img_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        
+        # Fazer a chamada para o modelo
+        start_time = time.time()
+        with st.spinner("Gerando plano..."):
             try:
-                # Abrir a imagem com PIL
-                img = Image.open(image)
-                # Criar um buffer para armazenar os dados da imagem
-                buffered = io.BytesIO()
-                # Salvar a imagem no buffer no formato PNG
-                img.save(buffered, format="PNG")
-                # Obter os bytes da imagem
-                img_bytes = buffered.getvalue()
-                # Codificar em base64
-                img_data = base64.b64encode(img_bytes).decode('utf-8')
+                if img_data:
+                    response = ai_service.generate_text(formatted_prompt, max_tokens=1024, image=img_data)
+                else:
+                    response = ai_service.generate_text(formatted_prompt, max_tokens=1024)
+                    
+                # Log do tempo de resposta
+                elapsed_time = time.time() - start_time
+                logging.info(f"Tempo de resposta da IA: {elapsed_time:.2f} segundos")
             except Exception as e:
-                st.warning(f"Erro ao processar imagem: {str(e)}. Gerando plano sem imagem.")
+                st.error(f"Erro ao gerar o plano: {str(e)}")
+                logging.error(f"Erro na API de IA: {str(e)}")
+                return None
         
-        # Mostrar progresso
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # Processar a resposta
+        if not response:
+            st.error("Não foi possível gerar um plano. Tente novamente com uma descrição mais detalhada.")
+            return None
         
-        for i in range(101):
-            time.sleep(0.03)  # Simular processamento
-            progress_bar.progress(i)
-            status_text.text(f"Gerando plano... {i}%")
-        
-        # Gerar resposta
-        if img_data:
-            response = gemini_service.generate_text(formatted_prompt, max_tokens=1024, image=img_data)
-        else:
-            response = gemini_service.generate_text(formatted_prompt, max_tokens=1024)
-        
-        # Limpar indicadores de progresso
-        progress_bar.empty()
-        status_text.empty()
-        
-        # Salvar resultado
-        st.session_state.plan_result = response
+        # Parsear o JSON da resposta
+        try:
+            # Tentar extrair JSON da resposta
+            json_match = re.search(r'```json(.*?)```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1).strip()
+            else:
+                json_str = response.strip()
+            
+            # Remover caracteres invisíveis que podem atrapalhar o parsing
+            json_str = json_str.replace('\u200b', '')
+            
+            # Parsear o JSON
+            data = json.loads(json_str)
+            
+            # Adicionar ID para cada tarefa e subtarefa
+            main_title = "Plano gerado pela IA"
+            if "title" in data:
+                main_title = data["title"]
+            
+            # Adicionar data de criação
+            data["created_at"] = datetime.now().isoformat()
+            
+            return data
+        except Exception as e:
+            logging.error(f"Erro ao processar resposta da IA: {str(e)}")
+            logging.debug(f"Resposta recebida: {response[:500]}...")
+            st.error(f"Erro ao processar o plano. Tente novamente. Detalhes: {str(e)}")
+            st.code(response)
+            return None
     except Exception as e:
-        st.error(f"Erro ao gerar plano: {str(e)}")
-    finally:
-        st.session_state.plan_loading = False
+        st.error(f"Erro ao gerar o plano: {str(e)}")
+        logging.error(f"Erro no processo de geração: {str(e)}")
+        return None
 
 # Função para criar tarefa a partir do plano
 def create_tasks_from_plan():
@@ -129,7 +160,7 @@ def create_tasks_from_plan():
                 title_candidates.append(line)
         
         # Escolher o título mais adequado
-        main_title = "Plano gerado pelo Gemini"
+        main_title = "Plano gerado pela IA"
         if title_candidates:
             # Prefira títulos com palavras como "plano", "planejamento", etc.
             for candidate in title_candidates:
@@ -138,7 +169,7 @@ def create_tasks_from_plan():
                     break
             
             # Se não encontrou nenhum com as palavras-chave, use o primeiro
-            if main_title == "Plano gerado pelo Gemini" and title_candidates:
+            if main_title == "Plano gerado pela IA" and title_candidates:
                 main_title = title_candidates[0]
         
         # Extrair tarefas principais e subtarefas
@@ -203,10 +234,10 @@ def show_planning_page():
     # Inicializar estado da sessão
     init_session_state()
     
-    st.header("Planejador com Gemini")
+    st.header("Planejador com IA")
     
     st.markdown("""
-    Use a API Gemini para gerar planos detalhados para suas tarefas.
+    Use a IA para gerar planos detalhados para suas tarefas.
     Descreva o que você precisa planejar e opcionalmente adicione uma imagem para referência.
     """)
     
@@ -230,7 +261,7 @@ def show_planning_page():
     if st.button("Gerar Plano", disabled=generate_disabled, key="generate_plan_button"):
         # Garantir que o prompt esteja atualizado
         st.session_state.plan_prompt = st.session_state.plan_prompt_input
-        generate_plan(st.session_state.plan_prompt, st.session_state.image_uploaded)
+        generate_planning(st.session_state.plan_prompt, st.session_state.image_uploaded)
     
     # Mostrar loading
     if st.session_state.plan_loading:
