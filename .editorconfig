@@ -1,0 +1,19 @@
+# Editor configuration, see https://editorconfig.org
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4  # Padrão PEP 8 para Python
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.py]
+max_line_length = 100  # Para alinhar com a configuração do flake8
+
+[*.{json,yml,yaml,html,css,js}]
+indent_size = 2  # Configuração comum para esses tipos de arquivo
+
+[*.md]
+max_line_length = off
+trim_trailing_whitespace = false 

@@ -1,0 +1,59 @@
+{
+    // Para mais informações, visite: https://go.microsoft.com/fwlink/?LinkId=733558
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Streamlit: Executar",
+            "type": "shell",
+            "command": "streamlit run src/app.py",
+            "isBackground": true,
+            "problemMatcher": {
+                "owner": "python",
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*Running on.*",
+                    "endsPattern": ".*Press CTRL\\+C to quit.*"
+                }
+            }
+        },
+        {
+            "label": "Testes: Executar",
+            "type": "shell",
+            "command": "python -m pytest tests",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Lint: Verificar",
+            "type": "shell",
+            "command": "python -m flake8 src tests",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Instalar Dependências",
+            "type": "shell",
+            "command": "pip install -r requirements.txt",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ]
+}
