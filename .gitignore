@@ -1,5 +1,42 @@
 # See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
+# Dependências
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de ambiente e credenciais
+.env
+*.env
+firebase-credentials.json
+firebase_credentials.json
+firebase-config/firebase-credentials.json
+*.pem
+*.key
+
+# Arquivos de build e distribuição
+dist/
+build/
+*.egg-info/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Diretórios do sistema
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Arquivos locais do Firebase
+.firebase/
+firebase-debug.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -10,9 +47,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -53,7 +88,6 @@ coverage.xml
 *.pot
 
 # Django stuff:
-*.log
 local_settings.py
 db.sqlite3
 
@@ -83,8 +117,6 @@ celerybeat-schedule
 *.sage.py
 
 # Environments
-.env
-.venv
 env/
 venv/
 ENV/
@@ -113,7 +145,6 @@ data/*.json
 !/data/.gitkeep
 
 # IDE specific files
-.idea/
 .project
 .classpath
 .c9/
@@ -130,7 +161,6 @@ data/*.json
 .history/*
 
 # System files
-.DS_Store
 Thumbs.db
 
 # Terraform
@@ -141,7 +171,6 @@ Thumbs.db
 *.tfvars
 
 # Arquivos de configuração sensíveis
-.env
 config/firebase-credentials.json
 terraform.tfstate
 terraform.tfstate.backup
@@ -149,4 +178,4 @@ terraform.tfstate.backup
 # Arquivos TypeScript que não são necessários para o projeto Python
 tsconfig.json
 tsconfig.app.json
-tsconfig.spec.json 
+tsconfig.spec.json
