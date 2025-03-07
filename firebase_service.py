@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import uuid
 import streamlit as st
 
@@ -8,7 +8,7 @@ import streamlit as st
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore
-    FIREBASE_AVAILABLE = False  # Forçar modo offline para simplicidade
+    FIREBASE_AVAILABLE = True  # Permitir modo online
 except ImportError:
     FIREBASE_AVAILABLE = False
 
@@ -105,7 +105,6 @@ class LocalStorageService:
 class FirebaseService:
     """
     Serviço para interagir com o Firebase Firestore.
-    No modo simplificado, sempre usa armazenamento local.
     """
     _instance = None
     
@@ -126,39 +125,126 @@ class FirebaseService:
             self.config = firebase_config
             self.app = None
             self.db = None
-            self.is_offline_mode = True
-            self.local_storage = LocalStorageService()
-            print("Usando modo offline (armazenamento local)")
+            self.is_offline_mode = not FIREBASE_AVAILABLE
+            
+            # Tentar inicializar o Firebase Firestore se disponível
+            if FIREBASE_AVAILABLE:
+                try:
+                    # Verificar se já existe uma instância do app
+                    try:
+                        self.app = firebase_admin.get_app()
+                    except ValueError:
+                        # Se não existir, criar nova instância
+                        # Verificar se existe um arquivo de credenciais
+                        cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+                        
+                        if cred_path and os.path.exists(cred_path):
+                            # Usar credenciais do arquivo
+                            cred = credentials.Certificate(cred_path)
+                            self.app = firebase_admin.initialize_app(cred)
+                            print(f"Firebase inicializado com credenciais do arquivo: {cred_path}")
+                        else:
+                            # Se não houver arquivo, usar configuração padrão
+                            self.app = firebase_admin.initialize_app()
+                            print("Firebase inicializado com configuração padrão")
+                    
+                    # Conectar ao Firestore
+                    self.db = firestore.client()
+                    self.is_offline_mode = False
+                    print("Firebase conectado com sucesso (modo online)")
+                except Exception as e:
+                    print(f"Erro ao conectar ao Firebase: {str(e)}")
+                    self.is_offline_mode = True
+            
+            if self.is_offline_mode:
+                self.local_storage = LocalStorageService()
+                print("Usando modo offline (armazenamento local)")
+            
             self.initialized = True
     
     def get_collection(self, collection_name: str):
         """
         Obtém uma referência para uma coleção.
         """
+        if not self.is_offline_mode and self.db is not None:
+            return self.db.collection(collection_name)
         return self.local_storage.get_collection(collection_name)
     
     def get_documents(self, collection_name: str) -> List[Dict[str, Any]]:
         """
         Recupera todos os documentos de uma coleção.
         """
+        if not self.is_offline_mode and self.db is not None:
+            try:
+                collection_ref = self.get_collection(collection_name)
+                if isinstance(collection_ref, str):
+                    return self.local_storage.get_documents(collection_name)
+                
+                docs = collection_ref.get()
+                result = []
+                for doc in docs:
+                    doc_dict = doc.to_dict()
+                    if isinstance(doc_dict, dict):
+                        doc_dict['id'] = doc.id
+                        result.append(doc_dict)
+                return result
+            except Exception as e:
+                print(f"Erro ao buscar documentos: {str(e)}")
+                return []
         return self.local_storage.get_documents(collection_name)
     
     def add_document(self, collection_name: str, data: Dict[str, Any]) -> Optional[str]:
         """
         Adiciona um documento a uma coleção.
         """
+        if not self.is_offline_mode and self.db is not None:
+            try:
+                collection_ref = self.get_collection(collection_name)
+                if isinstance(collection_ref, str):
+                    return self.local_storage.add_document(collection_name, data)
+                
+                doc_ref = collection_ref.document()
+                doc_ref.set(data)
+                return doc_ref.id
+            except Exception as e:
+                print(f"Erro ao adicionar documento: {str(e)}")
+                return None
         return self.local_storage.add_document(collection_name, data)
     
     def update_document(self, collection_name: str, document_id: str, data: Dict[str, Any]) -> bool:
         """
         Atualiza um documento existente.
         """
+        if not self.is_offline_mode and self.db is not None:
+            try:
+                collection_ref = self.get_collection(collection_name)
+                if isinstance(collection_ref, str):
+                    return self.local_storage.update_document(collection_name, document_id, data)
+                
+                doc_ref = collection_ref.document(document_id)
+                doc_ref.update(data)
+                return True
+            except Exception as e:
+                print(f"Erro ao atualizar documento: {str(e)}")
+                return False
         return self.local_storage.update_document(collection_name, document_id, data)
     
     def delete_document(self, collection_name: str, document_id: str) -> bool:
         """
         Exclui um documento.
         """
+        if not self.is_offline_mode and self.db is not None:
+            try:
+                collection_ref = self.get_collection(collection_name)
+                if isinstance(collection_ref, str):
+                    return self.local_storage.delete_document(collection_name, document_id)
+                
+                doc_ref = collection_ref.document(document_id)
+                doc_ref.delete()
+                return True
+            except Exception as e:
+                print(f"Erro ao excluir documento: {str(e)}")
+                return False
         return self.local_storage.delete_document(collection_name, document_id)
 
     # Métodos para compatibilidade com o novo TaskService
