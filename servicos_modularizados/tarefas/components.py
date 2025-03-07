@@ -207,13 +207,6 @@ def tasks_ui(container=None):
     # Escolher onde renderizar
     ui = container if container else st
 
-    # Botão para criar tarefas a partir do plano existente
-    if "last_plan" in st.session_state and st.session_state.last_plan:
-        if ui.button("Criar Tarefas do Plano Atual"):
-            if criar_tarefas_do_plano(st.session_state.last_plan, container=ui):
-                ui.success("Tarefas criadas com sucesso!")
-                ui.rerun()
-
     # Exibir lista de tarefas
     if "tasks" not in st.session_state or not st.session_state.tasks:
         ui.info(

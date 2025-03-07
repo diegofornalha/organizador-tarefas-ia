@@ -193,19 +193,9 @@ def planning_ui(container=None):
                                                 ):
                                                     ui.write(f"- {subtarefa['titulo']}")
 
-                                    # Botão para ir para a aba de tarefas se estiver disponível
-                                    if ui.button("Criar Tarefas a partir deste Plano"):
-                                        if "mudar_para_aba" in globals():
-                                            # Se estiver no contexto do componente de abas
-                                            mudar_para_aba(2)
-                                            ui.rerun()
-                                        else:
-                                            # Em contexto standalone
-                                            ui.success(
-                                                "Plano pronto para criar tarefas!"
-                                            )
-                                            # Manter o plano para uso posterior
-                                            st.session_state.last_plan = plan_result
+                                    # Remover botão para criar tarefas, pois elas serão criadas automaticamente
+                                    # Apenas informar ao usuário
+                                    ui.success("Tarefas sendo criadas automaticamente!")
                             except Exception as error:
                                 # Se não conseguir extrair JSON, apenas mostrar o texto
                                 pass
