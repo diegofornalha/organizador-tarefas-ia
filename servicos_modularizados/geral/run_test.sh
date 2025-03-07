@@ -7,7 +7,7 @@ echo "Diretório atual: $(pwd)"
 export PYTHONPATH=$PYTHONPATH:$(pwd):$(pwd)/..
 echo "PYTHONPATH: $PYTHONPATH"
 
-echo "===== Iniciando teste dos serviços modularizados ====="
+echo "===== Iniciando serviços modularizados gerais ====="
 
 # Executando o script streamlit diretamente, mantendo o PYTHONPATH
 streamlit run test_implementation.py --server.port=8505
