@@ -8,199 +8,98 @@ import streamlit as st
 import uuid
 from datetime import datetime, timedelta
 
-# Importar o módulo de histórico de tarefas
-try:
-    import historico_tarefas
-except ImportError:
-    import sys
-    import os
-
-    # Adicionar diretório pai ao path
-    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    if module_path not in sys.path:
-        sys.path.insert(0, module_path)
-    import historico_tarefas
-
-# Configurar a página apenas quando este script é executado diretamente
+# Configurar a página APENAS quando este script é executado diretamente
+# DEVE ser a primeira chamada Streamlit no aplicativo
 if __name__ == "__main__":
     st.set_page_config(
         page_title="Demo - Histórico de Tarefas",
         page_icon="📊",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="expanded"
     )
 
-# Estilo personalizado
-st.markdown(
-    """
-<style>
-    .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #f0f0f0;
-        border-radius: 4px 4px 0 0;
-        padding: 8px 16px;
-        border: 1px solid #e0e0e0;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #4CAF50;
-        color: white;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
+    # Definir flag para indicar que estamos executando com o Streamlit
+    setattr(st, "_is_running_with_streamlit", True)
 
+# Importar o módulo de histórico de tarefas - APÓS a configuração
+try:
+    import historico_tarefas
+except ImportError:
+    import sys
+    import os
+    # Adicionar diretório pai ao path
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+    import historico_tarefas
 
 def main():
-    # Título principal
-    st.title("📊 Demonstração: Módulo de Histórico de Tarefas")
+    st.title("📊 Demonstração do Histórico de Tarefas")
+    st.write("Este aplicativo demonstra as funcionalidades do módulo de histórico de tarefas.")
 
-    # Informações sobre o módulo
-    st.info(
-        """
-    **Módulo: historico_tarefas**
-
-    Este módulo fornece funcionalidades para rastrear, visualizar e analisar
-    o histórico de tarefas em uma aplicação Streamlit. Ele pode ser facilmente
-    integrado a qualquer aplicação que precise manter um registro de atividades
-    relacionadas a tarefas.
-    """
-    )
-
-    # Dividir em abas
-    tab1, tab2, tab3 = st.tabs(
-        ["✨ Criação de Tarefas", "📋 Visualização do Histórico", "📊 Análises"]
-    )
-
-    # Tab 1: Criar tarefas de exemplo
-    with tab1:
-        st.header("Criação de Tarefas de Exemplo")
-
-        # Formulário para criar tarefa
-        with st.form("criar_tarefa"):
-            st.subheader("Nova Tarefa")
-
-            # Campos do formulário
-            titulo = st.text_input("Título da tarefa", value="Tarefa de exemplo")
-            descricao = st.text_area(
-                "Descrição", value="Descrição da tarefa de exemplo"
-            )
-            prioridade = st.select_slider(
-                "Prioridade", options=["Baixa", "Média", "Alta"], value="Média"
-            )
-            data_vencimento = st.date_input(
-                "Data de vencimento", value=datetime.now() + timedelta(days=7)
-            )
-
-            # Botões
-            col1, col2 = st.columns(2)
-            with col1:
-                submit = st.form_submit_button("Criar Tarefa")
-            with col2:
-                criar_varias = st.form_submit_button("Criar 5 Tarefas de Exemplo")
-
-        # Processar criação de tarefa única
-        if submit:
-            task_id = str(uuid.uuid4())
-            historico_tarefas.record_task_event(
-                task_id=task_id,
-                task_title=titulo,
-                event_type="created",
-                details=f"Prioridade: {prioridade}, Vencimento: {data_vencimento}",
-            )
-            st.success(f"Tarefa '{titulo}' criada com sucesso!")
-
-            # Perguntar se deseja marcar como concluída
-            if st.button("Marcar como Concluída"):
-                historico_tarefas.record_task_event(
-                    task_id=task_id,
-                    task_title=titulo,
-                    event_type="completed",
-                    details="Tarefa concluída na demonstração",
-                )
-                st.success(f"Tarefa '{titulo}' marcada como concluída!")
-
-        # Processar criação de múltiplas tarefas
-        if criar_varias:
-            for i in range(1, 6):
-                task_id = str(uuid.uuid4())
-                task_title = f"Tarefa demonstrativa #{i}"
-
-                # Criar tarefa
-                historico_tarefas.record_task_event(
-                    task_id=task_id,
-                    task_title=task_title,
-                    event_type="created",
-                    details=f"Tarefa automática criada na demonstração",
-                )
-
-                # Algumas tarefas serão concluídas
-                if i % 2 == 0:
-                    historico_tarefas.record_task_event(
-                        task_id=task_id,
-                        task_title=task_title,
-                        event_type="completed",
-                        details="Concluída automaticamente na demonstração",
-                    )
-
-                # Uma tarefa será excluída
-                if i == 3:
-                    historico_tarefas.record_task_event(
-                        task_id=task_id,
-                        task_title=task_title,
-                        event_type="deleted",
-                        details="Excluída na demonstração",
-                    )
-
-            st.success("5 tarefas demonstrativas foram criadas com sucesso!")
-
-    # Tab 2: Visualizar histórico
-    with tab2:
-        st.header("Visualização do Histórico de Tarefas")
-
-        # Exibir o componente de histórico
-        historico_tarefas.show_tasks_history_panel()
-
-    # Tab 3: Análises
-    with tab3:
-        st.header("Análises de Produtividade")
-
-        # Exibir o componente de análise
-        historico_tarefas.show_tasks_analytics()
-
-    # Sidebar com resumo
+    # Exibir histórico na barra lateral
     historico_tarefas.show_tasks_history_sidebar()
 
-    # Informações sobre a implementação
-    st.divider()
-    st.subheader("Sobre a Implementação")
+    # Dividir a interface em abas
+    tab1, tab2, tab3 = st.tabs([
+        "✨ Registrar Eventos",
+        "📋 Histórico Completo",
+        "📊 Análises"
+    ])
 
-    st.markdown(
-        """
-    Este módulo implementa as seguintes funções principais:
+    # Aba 1: Registrar eventos de exemplo
+    with tab1:
+        st.header("Registrar Eventos de Tarefas")
+        st.write("Use este formulário para registrar eventos de exemplo no histórico.")
 
-    * `record_task_event()`: Registra eventos relacionados a tarefas
-    * `get_tasks_history()`: Obtém o histórico de tarefas
-    * `show_tasks_history_sidebar()`: Exibe um resumo do histórico na barra lateral
-    * `show_tasks_history_panel()`: Exibe o histórico completo em um painel
-    * `show_tasks_analytics()`: Exibe análises e gráficos baseados no histórico
-    * `clear_tasks_history()`: Limpa o histórico de tarefas
+        col1, col2 = st.columns(2)
+        with col1:
+            task_id = st.text_input("ID da Tarefa", value=str(uuid.uuid4())[:8])
+            task_title = st.text_input("Título da Tarefa", value="Exemplo de tarefa")
 
-    O módulo suporta integração com Firestore para persistência dos dados,
-    quando disponível, e também mantém os dados na session_state do Streamlit.
-    """
-    )
+        with col2:
+            # Mapear os tipos de evento em português para inglês
+            tipo_evento_opcoes = {
+                "Criada": "created",
+                "Concluída": "completed",
+                "Atualizada": "updated",
+                "Excluída": "deleted",
+                "Arquivada": "archived"
+            }
 
-    # Mostrar código de exemplo
+            tipo_evento_exibicao = st.selectbox(
+                "Tipo de Evento",
+                options=list(tipo_evento_opcoes.keys())
+            )
+            # Converter o tipo selecionado para o valor em inglês
+            event_type = tipo_evento_opcoes[tipo_evento_exibicao]
+
+            details = st.text_area("Detalhes", value="Detalhes sobre o evento da tarefa")
+
+        if st.button("Registrar Evento de Tarefa"):
+            success = historico_tarefas.record_task_event(
+                task_id=task_id,
+                task_title=task_title,
+                event_type=event_type,
+                details=details
+            )
+
+            if success:
+                st.success(f"Evento '{tipo_evento_exibicao}' registrado com sucesso!")
+            else:
+                st.error("Erro ao registrar evento. Verifique o console para mais detalhes.")
+
+    # Aba 2: Visualizar histórico completo
+    with tab2:
+        historico_tarefas.show_tasks_history_panel()
+
+    # Aba 3: Análises
+    with tab3:
+        historico_tarefas.show_tasks_analytics()
+
+    # Exibir exemplo de código
     with st.expander("Ver exemplo de código de uso"):
-        st.code(
-            """
+        st.code("""
 # Importar o módulo
 import historico_tarefas
 
@@ -208,7 +107,7 @@ import historico_tarefas
 historico_tarefas.record_task_event(
     task_id="12345",
     task_title="Minha tarefa",
-    event_type="created",
+    event_type="created",  # Usar "created" para criar, "completed" para concluir, etc.
     details="Detalhes adicionais da tarefa"
 )
 
@@ -220,10 +119,7 @@ historico_tarefas.show_tasks_history_panel()
 
 # Exibir análises
 historico_tarefas.show_tasks_analytics()
-        """,
-            language="python",
-        )
-
+        """, language="python")
 
 if __name__ == "__main__":
     main()

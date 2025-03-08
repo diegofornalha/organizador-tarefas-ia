@@ -18,6 +18,13 @@ GERAL_DIR="$PARENT_DIR/geral"
 export PYTHONPATH=$ROOT_DIR:$PARENT_DIR:$DIR:$GERAL_DIR:$PYTHONPATH
 echo "PYTHONPATH: $PYTHONPATH"
 
+# Verificar conflitos de porta
+if lsof -i :8512 | grep LISTEN > /dev/null; then
+    echo "AVISO: A porta 8512 já está em uso. Outro serviço pode estar rodando na mesma porta."
+    echo "Pressione Ctrl+C para cancelar ou ENTER para tentar iniciar mesmo assim."
+    read
+fi
+
 # Verificar dependências essenciais
 if ! pip list | grep -q "streamlit"; then
     echo "Instalando dependências necessárias..."
@@ -26,7 +33,7 @@ fi
 
 echo "===== Iniciando demo do histórico de planos ====="
 
-# Executar uma aplicação de exemplo
+# Criar uma versão modificada da aplicação demo
 cat > app_demo.py << 'EOL'
 """
 Aplicação de demonstração do módulo de histórico de planos.
@@ -34,11 +41,17 @@ Aplicação de demonstração do módulo de histórico de planos.
 import streamlit as st
 import json
 from datetime import datetime
-from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
 
-# Configurar página apenas quando este script é executado diretamente
+# Configurar página APENAS quando este script é executado diretamente
+# Esta DEVE ser a primeira chamada Streamlit
 if __name__ == "__main__":
     st.set_page_config(page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide")
+
+    # Definir flag para indicar que estamos executando com o Streamlit
+    setattr(st, "_is_running_with_streamlit", True)
+
+# Importar os componentes APÓS a configuração
+from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
 
 # Título da página
 st.title("📚 Demonstração do Histórico de Planos")
@@ -54,112 +67,98 @@ tab1, tab2 = st.tabs([
 
 # Aba 1: Criar plano de exemplo
 with tab1:
-    st.header("Criar um Plano de Exemplo")
+    st.header("Criar Plano de Exemplo")
 
-    # Formulário para criar um plano de exemplo
-    titulo = st.text_input("Título do Plano", "Plano de Exemplo")
-    descricao = st.text_area("Descrição", "Este é um plano de exemplo criado para testar o módulo de histórico.")
+    # Formulário para criar plano
+    with st.form("create_plan_form"):
+        # Dados do plano
+        plan_title = st.text_input("Título do Plano", value="Meu Plano de Exemplo")
+        plan_description = st.text_area(
+            "Descrição do Plano",
+            value="Este é um plano de exemplo criado para demonstrar o funcionamento do histórico."
+        )
 
-    # Criar estrutura de tarefas de exemplo
-    tarefas = [
-        {
-            "titulo": "Tarefa de exemplo 1",
-            "descricao": "Descrição da tarefa 1",
-            "prioridade": "alta",
-            "subtarefas": [
-                {"titulo": "Subtarefa 1.1", "descricao": "Descrição da subtarefa 1.1"},
-                {"titulo": "Subtarefa 1.2", "descricao": "Descrição da subtarefa 1.2"}
-            ]
-        },
-        {
-            "titulo": "Tarefa de exemplo 2",
-            "descricao": "Descrição da tarefa 2",
-            "prioridade": "média",
-            "subtarefas": [
-                {"titulo": "Subtarefa 2.1", "descricao": "Descrição da subtarefa 2.1"}
-            ]
-        }
-    ]
+        # Etapas do plano
+        st.subheader("Etapas do Plano")
+        steps = []
 
-    # Construir o plano completo
-    plano = {
-        "titulo": titulo,
-        "descricao": descricao,
-        "tarefas": tarefas
-    }
+        # Adicionar algumas etapas de exemplo
+        for i in range(1, 4):
+            step_title = st.text_input(f"Etapa {i}", value=f"Etapa {i} de exemplo")
+            step_description = st.text_area(
+                f"Descrição da Etapa {i}",
+                value=f"Descrição da etapa {i} do plano de exemplo"
+            )
+            steps.append({
+                "title": step_title,
+                "description": step_description
+            })
 
-    # Exibir o JSON do plano
-    with st.expander("Visualizar JSON do plano"):
-        st.code(json.dumps(plano, indent=2), language="json")
+        # Botão para salvar
+        submitted = st.form_submit_button("Salvar Plano no Histórico")
 
-    # Botão para salvar no histórico
-    if st.button("Salvar Plano no Histórico"):
-        plano_info = {
-            "titulo": plano["titulo"],
-            "json": json.dumps(plano),
-            "data": datetime.now().isoformat()
+    # Processar o envio do formulário
+    if submitted:
+        # Criar dados do plano
+        plan_data = {
+            "title": plan_title,
+            "description": plan_description,
+            "steps": steps,
+            "created_at": datetime.now().isoformat(),
+            "source": "app_demo"
         }
 
-        if save_plan_to_history(plano_info):
-            st.success(f"Plano '{plano['titulo']}' salvo no histórico!")
-            st.rerun()
+        # Salvar no histórico
+        success = save_plan_to_history(plan_data)
+
+        if success:
+            st.success("✅ Plano salvo com sucesso no histórico!")
         else:
-            st.error("Erro ao salvar plano no histórico")
+            st.error("❌ Erro ao salvar o plano no histórico")
 
 # Aba 2: Visualizar histórico completo
 with tab2:
-    # Utilizar o novo componente de visualização em painel
     show_plans_history_panel()
 
-# Informações sobre o módulo
-with st.expander("Sobre este módulo"):
-    st.write("""
-    O módulo **Histórico de Planos** é uma biblioteca independente para gerenciar o histórico
-    de planos gerados em qualquer aplicativo. Ele oferece:
-
-    1. **Visualização**: Componentes para exibir o histórico na barra lateral e em painel completo
-    2. **Persistência**: Salva tanto na sessão quanto no Firestore (se disponível)
-    3. **Interação**: Permite consultar, filtrar, visualizar, exportar e limpar o histórico
-
-    Este módulo foi projetado para ser reutilizável e pode ser incorporado em qualquer
-    aplicativo Streamlit que precise gerenciar histórico de planos.
-    """)
-
-    # Exemplos de código de uso
-    with st.expander("Exemplos de código"):
-        st.code("""
-# Importar o módulo
+# Exemplo de código
+with st.expander("Ver código de exemplo de uso"):
+    st.code("""
+# Importar os componentes necessários
 from historico_planos import (
     show_plans_history_sidebar,
     show_plans_history_panel,
-    save_plan_to_history,
-    get_plans_history,
-    clear_plans_history
+    save_plan_to_history
 )
 
-# Exibir na barra lateral
+# Exibir histórico na barra lateral
 show_plans_history_sidebar()
 
-# Exibir em painel principal (com filtros e visualização detalhada)
+# Exibir painel completo em qualquer container
 show_plans_history_panel()
 
-# Salvar um novo plano
-plano_info = {
-    "titulo": "Meu Plano",
-    "json": json.dumps(dados_do_plano),
-    "data": datetime.now().isoformat()
+# Salvar um plano no histórico
+plan_data = {
+    "title": "Meu Plano",
+    "description": "Descrição do plano",
+    "steps": [
+        {"title": "Etapa 1", "description": "Fazer algo"},
+        {"title": "Etapa 2", "description": "Fazer outra coisa"}
+    ],
+    "created_at": "2023-07-15T10:30:00"
 }
-save_plan_to_history(plano_info)
-
-# Obter a lista de planos programaticamente
-planos = get_plans_history()
-
-# Limpar o histórico
-clear_plans_history()
+save_plan_to_history(plan_data)
 """, language="python")
+
+if __name__ == "__main__":
+    # Não precisamos usar main() aqui pois o código já está estruturado
+    pass
 EOL
 
-# Executar a aplicação de demo
+# Executar a demonstração
+echo "Iniciando a aplicação de demonstração do histórico de planos..."
+echo "A aplicação estará disponível em http://localhost:8512"
+echo ""
+
 streamlit run app_demo.py --server.port=8512
 
 # Fim do script

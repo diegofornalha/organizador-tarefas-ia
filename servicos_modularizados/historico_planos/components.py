@@ -20,6 +20,10 @@ GERAL_DIR = os.path.join(SERVICES_DIR, "geral")
 if GERAL_DIR not in sys.path:
     sys.path.insert(0, GERAL_DIR)
 
+# Verificar se estamos sendo executados como componente importado
+# e não tentar configurar a página neste caso
+IS_IMPORTED = not getattr(st, "_is_running_with_streamlit", False)
+
 # Importar funcionalidades necessárias
 try:
     from geral.app_logger import log_success, log_error, log_warning
@@ -145,8 +149,12 @@ def show_plans_history_panel(container=None):
                     margin-bottom: 10px;
                     background-color: #f9f9f9;
                 ">
-                    <h3>{plano.get('titulo', 'Plano sem título')}</h3>
-                    <p>Data: {formatar_data(plano.get('data', ''))}</p>
+                    <h3 style="color: #000000; font-weight: bold; margin-bottom: 8px;">
+                        {plano.get('titulo', 'Plano sem título')}
+                    </h3>
+                    <p style="color: #000000; font-size: 14px;">
+                        Data: {formatar_data(plano.get('data', ''))}
+                    </p>
                 </div>
                 """,
                 unsafe_allow_html=True,
