@@ -1,18 +1,18 @@
 """
-Componentes reutilizáveis para geração de planejamento.
-Este módulo contém componentes de UI que podem ser compartilhados.
+Componentes de planejamento para o módulo plano_tarefas.
+Versão local independente dos componentes originais de planejamento.
 """
 
 import streamlit as st
 import json
 import re
-import uuid
-from datetime import datetime
 import os
 import sys
+from datetime import datetime
 
-# Adicionar caminhos para importação
-SERVICES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Configurações de caminhos e imports
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICES_DIR = os.path.dirname(CURRENT_DIR)
 GERAL_DIR = os.path.join(SERVICES_DIR, "geral")
 
 # Adicionar diretórios ao path se necessário
@@ -20,8 +20,27 @@ if GERAL_DIR not in sys.path:
     sys.path.insert(0, GERAL_DIR)
 
 # Importar funcionalidades necessárias
-from geral.app_logger import add_log, log_success, log_error
-from geral.image_analysis_service import ImageAnalysisService
+try:
+    from geral.app_logger import log_success, log_error
+    from geral.image_analysis_service import ImageAnalysisService
+except ImportError:
+    # Funções padrão para uso quando as importações falham
+    def log_success(message):
+        print(f"SUCCESS: {message}")
+
+    def log_error(message):
+        print(f"ERROR: {message}")
+
+    # Classe básica para ImageAnalysisService
+    class ImageAnalysisService:
+        def __init__(self, debug_mode=False):
+            self.debug_mode = debug_mode
+
+        def analyze_image(self, image, prompt=None):
+            return "Serviço de análise de imagem não disponível"
+
+        def generate_planning_from_image(self, image, description=None):
+            return "Serviço de planejamento a partir de imagem não disponível"
 
 
 def planning_ui(container=None):
@@ -144,12 +163,6 @@ def planning_ui(container=None):
 
                         log_success("Plano de tarefas gerado com sucesso")
 
-                        # Armazenar o plano para uso posterior
-                        if "last_plan" not in st.session_state:
-                            st.session_state.last_plan = plan_result
-                        else:
-                            st.session_state.last_plan = plan_result
-
                         # Exibir resultado na outra coluna
                         with col2:
                             ui.subheader("Plano Gerado")
@@ -161,7 +174,8 @@ def planning_ui(container=None):
 
                                 # Extrair apenas o JSON (pode estar entre ```json e ```)
                                 json_match = re.search(
-                                    r"```(?:json)?\s*([\s\S]*?)\s*```", json_content
+                                    r"```(?:json)?\s*([\s\S]*?)\s*```",
+                                    json_content,
                                 )
                                 if json_match:
                                     json_content = json_match.group(1)
@@ -193,10 +207,9 @@ def planning_ui(container=None):
                                                 ):
                                                     ui.write(f"- {subtarefa['titulo']}")
 
-                                    # Remover botão para criar tarefas, pois elas serão criadas automaticamente
-                                    # Apenas informar ao usuário
+                                    # Informar que as tarefas serão criadas automaticamente
                                     ui.success("Tarefas sendo criadas automaticamente!")
-                            except Exception as error:
+                            except Exception:
                                 # Se não conseguir extrair JSON, apenas mostrar o texto
                                 pass
 
@@ -205,58 +218,3 @@ def planning_ui(container=None):
                         ui.error(f"Não foi possível gerar o plano: {str(e)}")
 
     return plan_image, plan_result
-
-
-def planning_standalone():
-    """
-    Versão standalone da interface de planejamento.
-    Usado quando este módulo é executado diretamente.
-    """
-    import streamlit as st
-    from geral.app_logger import get_logs, clear_logs
-
-    # Configurar página
-    st.set_page_config(
-        page_title="Geração de Planejamento", page_icon="📋", layout="wide"
-    )
-
-    # Título da página
-    st.title("📋 Geração de Planejamento")
-    st.write("Ferramenta para criação de planos de tarefas com IA.")
-
-    # Exibir logs
-    with st.expander("Logs do Sistema", expanded=False):
-        cols = st.columns([4, 1])
-        with cols[1]:
-            if st.button("Limpar Logs"):
-                clear_logs()
-                st.success("Logs limpos")
-                st.rerun()
-
-        logs = get_logs(max_count=20)
-        if logs:
-            for log in logs:
-                st.text(log)
-        else:
-            st.info("Nenhum log registrado ainda.")
-
-    # Interface principal
-    st.header("Geração de Planejamento")
-
-    # Usar o componente reutilizável
-    planning_ui()
-
-    # Informações sobre o módulo
-    with st.expander("Sobre esta ferramenta"):
-        st.write(
-            """
-        Esta é uma versão modular do serviço de planejamento.
-        Ela permite criar planos de tarefas detalhados com opções para:
-
-        1. **Descrição textual** do projeto ou tarefa
-        2. **Imagem de referência** (opcional)
-        3. **Opções adicionais** como detalhamento e cronograma
-
-        Os planos gerados podem ser exportados como tarefas para gerenciamento.
-        """
-        )

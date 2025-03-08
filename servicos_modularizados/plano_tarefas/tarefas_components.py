@@ -1,6 +1,6 @@
 """
-Componentes reutilizáveis para gerenciamento de tarefas.
-Este módulo contém componentes de UI que podem ser compartilhados.
+Componentes de tarefas para o módulo plano_tarefas.
+Versão local independente dos componentes originais de tarefas.
 """
 
 import streamlit as st
@@ -11,8 +11,9 @@ from datetime import datetime
 import os
 import sys
 
-# Adicionar caminhos para importação
-SERVICES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Configurações de caminhos e imports
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICES_DIR = os.path.dirname(CURRENT_DIR)
 GERAL_DIR = os.path.join(SERVICES_DIR, "geral")
 
 # Adicionar diretórios ao path se necessário
@@ -20,8 +21,15 @@ if GERAL_DIR not in sys.path:
     sys.path.insert(0, GERAL_DIR)
 
 # Importar funcionalidades necessárias
-from geral.app_logger import add_log, log_success, log_error
-from geral.history_service import HistoryService
+try:
+    from geral.app_logger import log_success, log_error
+except ImportError:
+    # Funções padrão para uso quando as importações falham
+    def log_success(message):
+        print(f"SUCCESS: {message}")
+
+    def log_error(message):
+        print(f"ERROR: {message}")
 
 
 def criar_tarefas_do_plano(plan_data=None, container=None):
@@ -110,10 +118,6 @@ def criar_tarefas_do_plano(plan_data=None, container=None):
             f"Adicionadas {len(novas_tarefas)} tarefas do plano '{plano_titulo}'"
         )
 
-        # Limpar o plano para evitar duplicação
-        if "last_plan" in st.session_state:
-            st.session_state.last_plan = None
-
         return True
     except Exception as e:
         log_error(f"Erro ao criar tarefas do plano: {str(e)}")
@@ -124,75 +128,62 @@ def criar_tarefas_do_plano(plan_data=None, container=None):
 def exibir_tarefa(tarefa, index, container=None):
     """
     Exibe uma tarefa na interface com opções para marcar como concluída e excluir.
-
-    Args:
-        tarefa: Dicionário com os dados da tarefa
-        index: Índice da tarefa na lista completa
-        container: Container Streamlit opcional. Se None, usa st diretamente.
     """
     # Escolher onde renderizar
     ui = container if container else st
 
-    with ui.container():
-        cols = ui.columns([1, 8, 1])
+    # Usar um expander para cada tarefa
+    tarefa_titulo = tarefa.get("titulo", "Tarefa sem título")
 
-        # Status (concluída ou não)
+    # Mostrar ícone de estado (✅ ou ⬜️)
+    status_icon = "✅" if tarefa.get("completed", False) else "⬜️"
+
+    with ui.expander(f"{status_icon} {tarefa_titulo}"):
+        cols = ui.columns([4, 1])
+
         with cols[0]:
-            completada = tarefa.get("completed", False)
-            # Checkbox para marcar como concluída
-            if ui.checkbox("", value=completada, key=f"check_{tarefa['id']}"):
-                if not completada:
-                    tarefa["completed"] = True
-                    ui.success("Tarefa concluída!")
-                    ui.rerun()
+            # Mostrar detalhes da tarefa
+            ui.markdown(f"**Descrição:** {tarefa.get('descricao', 'Sem descrição')}")
+            ui.markdown(f"**Prioridade:** {tarefa.get('prioridade', 'Normal')}")
 
-        # Detalhes da tarefa
-        with cols[1]:
-            # Título e descrição
-            if completada:
-                ui.markdown(f"#### ~~{tarefa['titulo']}~~")
-            else:
-                ui.markdown(f"#### {tarefa['titulo']}")
-
-            if tarefa.get("descricao"):
-                ui.markdown(f"{tarefa['descricao']}")
-
-            # Prioridade
-            prioridade = tarefa.get("prioridade", "média")
-            ui.caption(f"Prioridade: {prioridade}")
-
-            # Subtarefas
+            # Mostrar subtarefas se existirem
             if "subtarefas" in tarefa and tarefa["subtarefas"]:
-                with ui.expander("Subtarefas"):
-                    for i, subtarefa in enumerate(tarefa["subtarefas"]):
-                        sub_cols = ui.columns([1, 11])
-                        with sub_cols[0]:
-                            sub_completed = subtarefa.get("completed", False)
-                            if ui.checkbox(
-                                "", value=sub_completed, key=f"sub_{subtarefa['id']}"
-                            ):
-                                if not sub_completed:
-                                    subtarefa["completed"] = True
-                                    ui.success("Subtarefa concluída!")
-                                    ui.rerun()
+                ui.markdown("**Subtarefas:**")
 
-                        with sub_cols[1]:
-                            if sub_completed:
-                                ui.markdown(f"~~{subtarefa['titulo']}~~")
-                            else:
-                                ui.markdown(f"{subtarefa['titulo']}")
+                # Usar um dataframe para exibir subtarefas com checkbox
+                for subtarefa in tarefa["subtarefas"]:
+                    subcols = ui.columns([0.1, 3.9])
+                    with subcols[0]:
+                        sub_completed = subtarefa.get("completed", False)
+                        if ui.checkbox(
+                            "", value=sub_completed, key=f"sub_{subtarefa['id']}"
+                        ):
+                            if not sub_completed:
+                                subtarefa["completed"] = True
+                                st.rerun()
 
-                            if subtarefa.get("descricao"):
-                                ui.caption(subtarefa["descricao"])
+                    with subcols[1]:
+                        sub_status = "~~" if subtarefa.get("completed", False) else ""
+                        ui.markdown(
+                            f"{sub_status}{subtarefa.get('titulo', 'Subtarefa')}{sub_status}"
+                        )
 
-        # Botões de ação
-        with cols[2]:
-            if ui.button("🗑️", key=f"del_{tarefa['id']}"):
-                st.session_state.tasks.pop(index)
-                log_success(f"Tarefa '{tarefa['titulo']}' removida")
-                ui.rerun()
+        with cols[1]:
+            # Ações da tarefa
+            if not tarefa.get("completed", False):
+                if ui.button("Concluir", key=f"complete_{tarefa['id']}"):
+                    tarefa["completed"] = True
+                    st.rerun()
+            else:
+                if ui.button("Reabrir", key=f"reopen_{tarefa['id']}"):
+                    tarefa["completed"] = False
+                    st.rerun()
 
-        ui.divider()
+            if ui.button("Excluir", key=f"delete_{tarefa['id']}"):
+                # Remover a tarefa da lista
+                if index < len(st.session_state.tasks):
+                    st.session_state.tasks.pop(index)
+                    st.rerun()
 
 
 def tasks_ui(container=None):
@@ -216,11 +207,14 @@ def tasks_ui(container=None):
         ui.subheader(f"Suas Tarefas ({len(st.session_state.tasks)})")
 
         # Opções de visualização
-        view_options = ["Todas", "Pendentes", "Concluídas"]
-        view = ui.radio("Visualizar:", view_options, horizontal=True)
+        view = ui.radio(
+            "Visualizar:",
+            ["Todas", "Pendentes", "Concluídas"],
+            horizontal=True,
+            key="task_view",
+        )
 
-        # Filtrar tarefas conforme a visualização
-        filtered_tasks = []
+        # Filtrar tarefas conforme seleção
         if view == "Todas":
             filtered_tasks = st.session_state.tasks
         elif view == "Pendentes":
@@ -232,69 +226,14 @@ def tasks_ui(container=None):
                 t for t in st.session_state.tasks if t.get("completed", False)
             ]
 
+        ui.write(f"Mostrando {len(filtered_tasks)} tarefas")
+
         # Exibir tarefas
         for i, tarefa in enumerate(filtered_tasks):
             exibir_tarefa(tarefa, st.session_state.tasks.index(tarefa), container=ui)
 
         # Botão para limpar todas as tarefas
         if ui.button("Limpar Todas as Tarefas"):
-            st.session_state.tasks = []
-            log_success("Todas as tarefas foram removidas")
-            ui.rerun()
-
-
-def tasks_standalone():
-    """
-    Versão standalone da interface de gerenciamento de tarefas.
-    Usado quando este módulo é executado diretamente.
-    """
-    import streamlit as st
-    from geral.app_logger import get_logs, clear_logs
-
-    # Configurar página
-    st.set_page_config(
-        page_title="Gerenciamento de Tarefas", page_icon="✅", layout="wide"
-    )
-
-    # Título da página
-    st.title("✅ Gerenciamento de Tarefas")
-    st.write("Ferramenta para organizar e acompanhar tarefas.")
-
-    # Exibir logs
-    with st.expander("Logs do Sistema", expanded=False):
-        cols = st.columns([4, 1])
-        with cols[1]:
-            if st.button("Limpar Logs"):
-                clear_logs()
-                st.success("Logs limpos")
+            if ui.warning("Tem certeza? Esta ação não pode ser desfeita."):
+                st.session_state.tasks = []
                 st.rerun()
-
-        logs = get_logs(max_count=20)
-        if logs:
-            for log in logs:
-                st.text(log)
-        else:
-            st.info("Nenhum log registrado ainda.")
-
-    # Interface principal
-    st.header("Suas Tarefas")
-
-    # Usar o componente reutilizável
-    tasks_ui()
-
-    # Informações sobre o módulo
-    with st.expander("Sobre esta ferramenta"):
-        st.write(
-            """
-        Esta é uma versão modular do serviço de gerenciamento de tarefas.
-        Ela permite organizar e acompanhar tarefas geradas a partir de planos.
-
-        Funcionalidades:
-        1. **Visualização de tarefas** (todas, pendentes ou concluídas)
-        2. **Marcação de tarefas** como concluídas
-        3. **Gerenciamento de subtarefas**
-        4. **Remoção de tarefas** individuais ou todas de uma vez
-
-        As tarefas são armazenadas na sessão atual do navegador.
-        """
-        )

@@ -6,7 +6,6 @@ Este módulo integra os serviços de planejamento e gerenciamento de tarefas.
 import streamlit as st
 import os
 import sys
-from dotenv import load_dotenv
 from datetime import datetime
 
 # Configurar página - DEVE SER O PRIMEIRO COMANDO STREAMLIT!
@@ -15,42 +14,128 @@ st.set_page_config(page_title="Planejamento e Tarefas", page_icon="📋", layout
 # Adicionar caminhos para importação
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SERVICES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PLANNING_DIR = os.path.join(SERVICES_DIR, "planejamento")
-TASKS_DIR = os.path.join(SERVICES_DIR, "tarefas")
 GERAL_DIR = os.path.join(SERVICES_DIR, "geral")
 
 # Adicionar diretórios ao path
-for path in [ROOT_DIR, SERVICES_DIR, PLANNING_DIR, TASKS_DIR, GERAL_DIR]:
+for path in [ROOT_DIR, SERVICES_DIR, GERAL_DIR]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-# Importar os componentes dos módulos
+
+# Funções de log padrão para uso quando os módulos não estiverem disponíveis
+def log_success_default(message):
+    print(f"SUCCESS: {message}")
+
+
+def log_error_default(message):
+    print(f"ERROR: {message}")
+
+
+def log_warning_default(message):
+    print(f"WARNING: {message}")
+
+
+def get_logs_default(max_count=20):
+    return []
+
+
+def clear_logs_default():
+    pass
+
+
+# Inicializar variáveis com valores padrão
+log_success = log_success_default
+log_error = log_error_default
+log_warning = log_warning_default
+get_logs = get_logs_default
+clear_logs = clear_logs_default
+components_loaded = False
+
+# Tentar importar os componentes dos módulos
 try:
-    from planejamento.components import planning_ui
-    from tarefas.components import tasks_ui, criar_tarefas_do_plano
-    from geral.app_logger import add_log, log_success, log_error, get_logs, clear_logs
+    # Tentar importar o logger
+    try:
+        from geral.app_logger import (
+            log_success,
+            log_error,
+            log_warning,
+            get_logs,
+            clear_logs,
+        )
+    except ImportError as e:
+        print(f"Aviso: Não foi possível importar logger: {str(e)}")
+
+    # Tentar importar o histórico de planos - Novo módulo independente
+    try:
+        # Primeiro testar o novo módulo independente
+        from historico_planos import (
+            save_plan_to_history,
+            get_plans_history,
+            clear_plans_history,
+        )
+
+        log_success("Módulo de histórico de planos carregado com sucesso")
+    except ImportError as e:
+        print(f"Aviso: Módulo independente de histórico não encontrado: {str(e)}")
+        # Fallback para implementação anterior
+        try:
+            from geral.planos_history_component import (
+                save_plan_to_history,
+            )
+
+            log_success("Componente legado de histórico carregado com sucesso")
+        except ImportError as e:
+            print(f"Aviso: Nenhum componente de histórico disponível: {str(e)}")
+            save_plan_to_history = None
+
+    # Tentar importar componentes locais (nossos novos módulos)
+    try:
+        # Primeiro tentar os módulos locais
+        from planejamento_components import planning_ui
+        from tarefas_components import tasks_ui, criar_tarefas_do_plano
+
+        log_success("Componentes locais carregados com sucesso")
+    except ImportError as e:
+        print(f"Aviso: Componentes locais não encontrados: {str(e)}")
+
+        # Se falhar, tentar os módulos externos como fallback
+        try:
+            # Tentativa de usar módulos externos (legacy)
+            from planejamento.components import planning_ui
+            from tarefas.components import tasks_ui, criar_tarefas_do_plano
+
+            log_success("Componentes externos carregados com sucesso")
+        except ImportError as e:
+            print(f"Erro: Não foi possível carregar componentes: {str(e)}")
+            planning_ui = None
+            tasks_ui = None
+            criar_tarefas_do_plano = None
 
     components_loaded = True
-    log_success("Componentes carregados com sucesso")
-except ImportError as e:
+except Exception as e:
     components_loaded = False
     print(f"Erro ao importar componentes: {str(e)}")
-
-# Carregar variáveis de ambiente
-load_dotenv()
 
 
 # Função para criar tarefas a partir do plano atual
 def criar_tarefas_do_plano_atual():
     if "last_plan" in st.session_state and st.session_state.last_plan:
         try:
-            # Criar as tarefas usando a função do módulo de tarefas
-            if criar_tarefas_do_plano(st.session_state.last_plan):
-                log_success("Tarefas criadas com sucesso a partir do plano")
-                st.session_state.last_plan = None  # Limpar o plano após criar tarefas
-                st.success("Tarefas criadas com sucesso!")
-                st.rerun()
-                return True
+            # Verificar se a função está disponível
+            if criar_tarefas_do_plano:
+                # Criar as tarefas usando a função do módulo de tarefas
+                if criar_tarefas_do_plano(st.session_state.last_plan):
+                    log_success("Tarefas criadas com sucesso a partir do plano")
+                    st.session_state.last_plan = (
+                        None  # Limpar o plano após criar tarefas
+                    )
+                    st.success("Tarefas criadas com sucesso!")
+                    st.rerun()
+                    return True
+            else:
+                log_error("Módulo de tarefas não disponível")
+                st.error("Módulo de tarefas não disponível")
+                return False
         except Exception as e:
             log_error(f"Erro ao criar tarefas: {str(e)}")
             st.error(f"Erro ao criar tarefas: {str(e)}")
@@ -66,45 +151,6 @@ st.title("📋 Planejamento e Tarefas")
 st.write(
     "Esta aplicação integra os serviços de planejamento e gerenciamento de tarefas."
 )
-
-# Inicializar histórico de planos na session_state se não existir
-if "planos_historico" not in st.session_state:
-    st.session_state.planos_historico = []
-
-# Barra lateral para histórico de planos
-with st.sidebar:
-    # Botão para Nova Consulta
-    if st.button("🔄 Nova Consulta", use_container_width=True):
-        # Limpar o formulário e estado atual
-        if "last_plan" in st.session_state:
-            st.session_state.last_plan = None
-
-        # Forçar recarregamento da página
-        st.rerun()
-
-    st.header("📚 Histórico de Planos")
-
-    if not st.session_state.planos_historico:
-        st.info("Nenhum plano foi gerado ainda.")
-    else:
-        st.write(f"Total de planos: {len(st.session_state.planos_historico)}")
-
-        # Exibir planos em acordeões
-        for i, plano_info in enumerate(st.session_state.planos_historico):
-            with st.expander(f"Plano #{i+1}: {plano_info.get('titulo', 'Sem título')}"):
-                st.text_area(
-                    "JSON do Plano",
-                    value=plano_info.get("json", "{}"),
-                    height=200,
-                    disabled=True,
-                    key=f"plano_json_{i}",
-                )
-
-    # Botão para limpar histórico
-    if st.session_state.planos_historico and st.button("Limpar Histórico"):
-        st.session_state.planos_historico = []
-        st.success("Histórico de planos limpo!")
-        st.rerun()
 
 # Exibir logs
 with st.expander("Logs do Sistema", expanded=False):
@@ -126,7 +172,7 @@ with st.expander("Logs do Sistema", expanded=False):
 st.markdown("---")
 st.header("🔍 Geração de Planejamento")
 
-if components_loaded:
+if components_loaded and planning_ui:
     try:
         # Usar o componente de planejamento
         plan_image, plan_result = planning_ui()
@@ -150,23 +196,38 @@ if components_loaded:
                 plano_data = json.loads(plano_json)
                 plano_titulo = plano_data.get("titulo", "Plano Gerado")
 
-                # Adicionar ao histórico
-                st.session_state.planos_historico.append(
-                    {
-                        "titulo": plano_titulo,
-                        "json": plano_json,
-                        "data": datetime.now().isoformat(),
-                    }
-                )
-            except Exception as json_error:
+                # Adicionar ao histórico usando o componente modularizado
+                plano_info = {
+                    "titulo": plano_titulo,
+                    "json": plano_json,
+                    "data": datetime.now().isoformat(),
+                }
+
+                # Salvar no histórico (session_state e Firestore) se a função estiver disponível
+                if save_plan_to_history:
+                    save_plan_to_history(plano_info)
+                else:
+                    # Fallback: salvar apenas na session_state
+                    if "planos_historico" not in st.session_state:
+                        st.session_state.planos_historico = []
+                    st.session_state.planos_historico.append(plano_info)
+
+            except Exception as e:
                 # Se falhar, ainda assim adicionar ao histórico como texto
-                st.session_state.planos_historico.append(
-                    {
-                        "titulo": "Plano Gerado",
-                        "json": plan_result,
-                        "data": datetime.now().isoformat(),
-                    }
-                )
+                plano_info = {
+                    "titulo": "Plano Gerado",
+                    "json": plan_result,
+                    "data": datetime.now().isoformat(),
+                }
+
+                # Salvar no histórico se a função estiver disponível
+                if save_plan_to_history:
+                    save_plan_to_history(plano_info)
+                else:
+                    # Fallback: salvar apenas na session_state
+                    if "planos_historico" not in st.session_state:
+                        st.session_state.planos_historico = []
+                    st.session_state.planos_historico.append(plano_info)
 
             # Criar tarefas automaticamente sem necessidade de clique adicional
             criar_tarefas_do_plano_atual()
@@ -181,9 +242,8 @@ else:
 st.markdown("---")
 st.header("✅ Tarefas Geradas")
 
-if components_loaded:
+if components_loaded and tasks_ui:
     try:
-        # Remover botão adicional - as tarefas já devem ter sido criadas automaticamente
         # Usar o componente de tarefas
         tasks_ui()
     except Exception as e:
