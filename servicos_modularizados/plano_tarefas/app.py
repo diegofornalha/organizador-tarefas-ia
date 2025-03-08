@@ -6,18 +6,76 @@ Este módulo integra os serviços de planejamento e gerenciamento de tarefas.
 import streamlit as st
 import os
 import sys
+import io
 from datetime import datetime
+
+# Lista para armazenar logs de inicialização (apenas para depuração interna)
+initialization_logs = []
+system_logs = []
+
+# Sobrescrever funções padrão de notificação do Streamlit para capturar logs
+original_success = st.success
+original_info = st.info
+original_warning = st.warning
+original_error = st.error
 
 # Configurar página - DEVE SER O PRIMEIRO COMANDO STREAMLIT!
 st.set_page_config(page_title="Planejamento e Tarefas", page_icon="📋", layout="wide")
 
+
+# Função para capturar saída padrão (para logs)
+def capture_output(func):
+    def wrapper(*args, **kwargs):
+        # Redirecionar stdout para capturar saída
+        old_stdout = sys.stdout
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+
+        # Executar função
+        result = func(*args, **kwargs)
+
+        # Restaurar stdout e capturar saída
+        sys.stdout = old_stdout
+        output = captured_output.getvalue()
+
+        # Armazenar cada linha como um log separado
+        for line in output.splitlines():
+            if line.strip():  # Ignorar linhas vazias
+                initialization_logs.append(line)
+
+        return result
+
+    return wrapper
+
+
+# Sobrescrever funções de notificação do Streamlit para capturar e não exibir
+def silent_success(message, *args, **kwargs):
+    system_logs.append(f"SUCCESS: {message}")
+    # Não chamar a função original para não exibir a notificação
+
+
+def silent_info(message, *args, **kwargs):
+    system_logs.append(f"INFO: {message}")
+    # Não chamar a função original para não exibir a notificação
+
+
+def silent_warning(message, *args, **kwargs):
+    system_logs.append(f"WARNING: {message}")
+    # Não chamar a função original para não exibir a notificação
+
+
+def silent_error(message, *args, **kwargs):
+    system_logs.append(f"ERROR: {message}")
+    # Não chamar a função original para não exibir a notificação
+
+
 # Adicionar caminhos para importação
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SERVICES_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GERAL_DIR = os.path.join(SERVICES_DIR, "geral")
+root_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+services_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+geral_path = os.path.join(services_path, "geral")
 
 # Adicionar diretórios ao path
-for path in [ROOT_DIR, SERVICES_DIR, GERAL_DIR]:
+for path in [root_path, services_path, geral_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -25,22 +83,30 @@ for path in [ROOT_DIR, SERVICES_DIR, GERAL_DIR]:
 # Funções de log padrão para uso quando os módulos não estiverem disponíveis
 def log_success_default(message):
     print(f"SUCCESS: {message}")
+    initialization_logs.append(f"SUCCESS: {message}")
+    system_logs.append(f"SUCCESS: {message}")
 
 
 def log_error_default(message):
     print(f"ERROR: {message}")
+    initialization_logs.append(f"ERROR: {message}")
+    system_logs.append(f"ERROR: {message}")
 
 
 def log_warning_default(message):
     print(f"WARNING: {message}")
+    initialization_logs.append(f"WARNING: {message}")
+    system_logs.append(f"WARNING: {message}")
 
 
 def get_logs_default(max_count=20):
-    return []
+    combined_logs = initialization_logs + system_logs
+    return combined_logs[-max_count:] if combined_logs else []
 
 
 def clear_logs_default():
-    pass
+    initialization_logs.clear()
+    system_logs.clear()
 
 
 # Inicializar variáveis com valores padrão
@@ -50,9 +116,21 @@ log_warning = log_warning_default
 get_logs = get_logs_default
 clear_logs = clear_logs_default
 components_loaded = False
+save_plan_to_history = None
+
+# Sobrescrever funções do Streamlit para evitar notificações
+st.success = silent_success
+st.info = silent_info
+st.warning = silent_warning
+st.error = silent_error
+
 
 # Tentar importar os componentes dos módulos
-try:
+@capture_output
+def load_components():
+    global log_success, log_error, log_warning, get_logs, clear_logs
+    global components_loaded, save_plan_to_history
+
     # Tentar importar o logger
     try:
         from geral.app_logger import (
@@ -62,206 +140,162 @@ try:
             get_logs,
             clear_logs,
         )
-    except ImportError as e:
-        print(f"Aviso: Não foi possível importar logger: {str(e)}")
+    except ImportError:
+        print("Aviso: Não foi possível importar logger")
 
-    # Tentar importar o histórico de planos - Novo módulo independente
+    # Tentar importar o histórico de planos
     try:
         # Primeiro testar o novo módulo independente
-        from historico_planos import (
-            save_plan_to_history,
-            get_plans_history,
-            clear_plans_history,
-        )
+        from historico_planos import save_plan_to_history
 
-        log_success("Módulo de histórico de planos carregado com sucesso")
-    except ImportError as e:
-        print(f"Aviso: Módulo independente de histórico não encontrado: {str(e)}")
+        print("Módulo de histórico de planos carregado com sucesso")
+    except ImportError:
+        print("Aviso: Módulo independente de histórico não encontrado")
         # Fallback para implementação anterior
         try:
-            from geral.planos_history_component import (
-                save_plan_to_history,
-            )
+            from geral.planos_history_component import save_plan_to_history
 
-            log_success("Componente legado de histórico carregado com sucesso")
-        except ImportError as e:
-            print(f"Aviso: Nenhum componente de histórico disponível: {str(e)}")
+            print("Componente legado de histórico carregado com sucesso")
+        except ImportError:
+            print("Aviso: Nenhum componente de histórico disponível")
             save_plan_to_history = None
 
-    # Tentar importar componentes locais (nossos novos módulos)
-    try:
-        # Primeiro tentar os módulos locais
-        from planejamento_components import planning_ui
-        from tarefas_components import tasks_ui, criar_tarefas_do_plano
-
-        log_success("Componentes locais carregados com sucesso")
-    except ImportError as e:
-        print(f"Aviso: Componentes locais não encontrados: {str(e)}")
-
-        # Se falhar, tentar os módulos externos como fallback
-        try:
-            # Tentativa de usar módulos externos (legacy)
-            from planejamento.components import planning_ui
-            from tarefas.components import tasks_ui, criar_tarefas_do_plano
-
-            log_success("Componentes externos carregados com sucesso")
-        except ImportError as e:
-            print(f"Erro: Não foi possível carregar componentes: {str(e)}")
-            planning_ui = None
-            tasks_ui = None
-            criar_tarefas_do_plano = None
-
     components_loaded = True
-except Exception as e:
-    components_loaded = False
-    print(f"Erro ao importar componentes: {str(e)}")
+    return components_loaded
 
 
-# Função para criar tarefas a partir do plano atual
-def criar_tarefas_do_plano_atual():
-    if "last_plan" in st.session_state and st.session_state.last_plan:
-        try:
-            # Verificar se a função está disponível
-            if criar_tarefas_do_plano:
-                # Criar as tarefas usando a função do módulo de tarefas
-                if criar_tarefas_do_plano(st.session_state.last_plan):
-                    log_success("Tarefas criadas com sucesso a partir do plano")
-                    st.session_state.last_plan = (
-                        None  # Limpar o plano após criar tarefas
-                    )
-                    st.success("Tarefas criadas com sucesso!")
-                    st.rerun()
-                    return True
-            else:
-                log_error("Módulo de tarefas não disponível")
-                st.error("Módulo de tarefas não disponível")
-                return False
-        except Exception as e:
-            log_error(f"Erro ao criar tarefas: {str(e)}")
-            st.error(f"Erro ao criar tarefas: {str(e)}")
-            return False
-    else:
-        log_error("Nenhum plano disponível para criar tarefas")
-        st.warning("Nenhum plano disponível para criar tarefas")
-        return False
+# Carregar componentes
+load_components()
 
+# Restaurar funções originais do Streamlit para uso na interface (apenas para alguns elementos)
+st_success_selective = original_success
+st_error_selective = original_error
 
-# Título da página
+# Interface do usuário
 st.title("📋 Planejamento e Tarefas")
-st.write(
-    "Esta aplicação integra os serviços de planejamento e gerenciamento de tarefas."
-)
+st.write("Aplicação integrada para planejamento e gerenciamento de tarefas.")
 
-# Exibir logs
+# Componente de logs do sistema (recolhido por padrão)
 with st.expander("Logs do Sistema", expanded=False):
+    # Adicionar botão de limpar
     cols = st.columns([4, 1])
     with cols[1]:
-        if st.button("Limpar Logs"):
-            clear_logs()
-            st.success("Logs limpos")
-            st.rerun()
+        if original_success is not None and original_success != st.success:
+            if st.button("Limpar Logs"):
+                clear_logs()
+                # Aqui usamos o original_success diretamente para esta única notificação
+                original_success("Logs limpos")
+                st.rerun()
 
-    logs = get_logs(max_count=20)
-    if logs:
-        for log in logs:
-            st.text(log)
+    # Mostrar logs do sistema (se disponíveis)
+    if "get_logs" in globals() and callable(get_logs):
+        logs = get_logs(max_count=50)
+        if logs:
+            for log in logs:
+                st.text(log)
+        else:
+            # Aqui usamos o original_info diretamente para esta única notificação
+            if original_info is not None and original_info != st.info:
+                original_info("Nenhum log disponível.")
+            else:
+                st.write("Nenhum log disponível.")
     else:
-        st.info("Nenhum log registrado ainda.")
+        # Aqui usamos o original_warning diretamente para esta única notificação
+        if original_warning is not None and original_warning != st.warning:
+            original_warning("Função de logs não disponível.")
+        else:
+            st.write("⚠️ Função de logs não disponível.")
 
-# Seção de Geração de Planejamento
-st.markdown("---")
-st.header("🔍 Geração de Planejamento")
+# Verificar se os componentes foram carregados
+if not components_loaded:
+    # Aqui usamos o original_error diretamente para esta única notificação crítica
+    if original_error is not None and original_error != st.error:
+        original_error("Não foi possível carregar todos os componentes necessários.")
+    else:
+        st.write("❌ Não foi possível carregar todos os componentes necessários.")
+    st.stop()
 
-if components_loaded and planning_ui:
+# Interface principal com abas
+tab1, tab2 = st.tabs(["Planejamento", "Tarefas"])
+
+with tab1:
+    st.header("📝 Planejamento")
     try:
-        # Usar o componente de planejamento
-        plan_image, plan_result = planning_ui()
+        # Importar o componente sob demanda
+        from planejamento_components import planning_ui
 
-        # Se gerou um plano, armazenar para uso posterior e criar tarefas automaticamente
-        if plan_result:
-            st.session_state.last_plan = plan_result
-            log_success("Plano armazenado para uso")
+        # Usar o componente
+        planning_container = st.container()
+        plan_data = planning_ui(planning_container)
 
-            # Extrair título do plano se possível
-            plano_titulo = "Plano Gerado"
-            try:
-                import json
-                import re
+        # Se um plano foi criado, armazenar na sessão para uso em tarefas
+        if plan_data and isinstance(plan_data, dict):
+            if "current_plan" not in st.session_state:
+                st.session_state.current_plan = plan_data
+            elif st.session_state.current_plan.get("id") != plan_data.get("id"):
+                st.session_state.current_plan = plan_data
 
-                # Verificar se é um JSON ou texto com JSON embutido
-                json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", plan_result)
-                plano_json = json_match.group(1) if json_match else plan_result
-
-                # Tentar carregar como JSON
-                plano_data = json.loads(plano_json)
-                plano_titulo = plano_data.get("titulo", "Plano Gerado")
-
-                # Adicionar ao histórico usando o componente modularizado
-                plano_info = {
-                    "titulo": plano_titulo,
-                    "json": plano_json,
-                    "data": datetime.now().isoformat(),
-                }
-
-                # Salvar no histórico (session_state e Firestore) se a função estiver disponível
-                if save_plan_to_history:
-                    save_plan_to_history(plano_info)
-                else:
-                    # Fallback: salvar apenas na session_state
-                    if "planos_historico" not in st.session_state:
-                        st.session_state.planos_historico = []
-                    st.session_state.planos_historico.append(plano_info)
-
-            except Exception as e:
-                # Se falhar, ainda assim adicionar ao histórico como texto
-                plano_info = {
-                    "titulo": "Plano Gerado",
-                    "json": plan_result,
-                    "data": datetime.now().isoformat(),
-                }
-
-                # Salvar no histórico se a função estiver disponível
-                if save_plan_to_history:
-                    save_plan_to_history(plano_info)
-                else:
-                    # Fallback: salvar apenas na session_state
-                    if "planos_historico" not in st.session_state:
-                        st.session_state.planos_historico = []
-                    st.session_state.planos_historico.append(plano_info)
-
-            # Criar tarefas automaticamente sem necessidade de clique adicional
-            criar_tarefas_do_plano_atual()
-
+            # Salvar no histórico (se disponível)
+            if save_plan_to_history is not None:
+                try:
+                    save_plan_to_history(plan_data)
+                    log_success("Plano salvo no histórico")
+                except Exception as e:
+                    log_error(f"Erro ao salvar plano no histórico: {str(e)}")
     except Exception as e:
-        log_error(f"Erro ao usar componente de planejamento: {str(e)}")
-        st.error(f"Ocorreu um erro: {str(e)}")
-else:
-    st.error("Não foi possível carregar os componentes de planejamento.")
+        # Aqui usamos o original_error diretamente para esta única notificação crítica
+        if original_error is not None and original_error != st.error:
+            original_error(f"Erro ao carregar componente de planejamento: {str(e)}")
+        else:
+            st.write(f"❌ Erro ao carregar componente de planejamento: {str(e)}")
 
-# Seção de Tarefas Geradas
-st.markdown("---")
-st.header("✅ Tarefas Geradas")
-
-if components_loaded and tasks_ui:
+with tab2:
+    st.header("✅ Tarefas")
     try:
+        # Importar o componente sob demanda
+        from tarefas_components import tasks_ui
+
+        # Verificar se temos um plano selecionado
+        current_plan = st.session_state.get("current_plan", None)
+
+        if current_plan:
+            # Evitando st.info diretamente
+            st.write(f"📘 Plano atual: **{current_plan.get('title', 'Sem título')}**")
+
         # Usar o componente de tarefas
-        tasks_ui()
+        tasks_container = st.container()
+        # Passar apenas o ID do plano se o componente aceitar esse parâmetro
+        try:
+            if current_plan:
+                tasks_ui(tasks_container, current_plan.get("id"))
+            else:
+                tasks_ui(tasks_container)
+        except TypeError:
+            # Se o componente não aceitar o ID, chamá-lo sem esse parâmetro
+            tasks_ui(tasks_container)
     except Exception as e:
-        log_error(f"Erro ao usar componente de tarefas: {str(e)}")
-        st.error(f"Ocorreu um erro: {str(e)}")
-else:
-    st.error("Não foi possível carregar os componentes de tarefas.")
+        # Aqui usamos o original_error diretamente para esta única notificação crítica
+        if original_error is not None and original_error != st.error:
+            original_error(f"Erro ao carregar componente de tarefas: {str(e)}")
+        else:
+            st.write(f"❌ Erro ao carregar componente de tarefas: {str(e)}")
 
-# Informações sobre o aplicativo
-with st.expander("Sobre este aplicativo"):
-    st.write(
-        """
-    **Planejamento e Tarefas** integra dois módulos especializados:
+# Rodapé
+st.write("---")
+st.write("© 2023 Aplicação de Planejamento e Tarefas")
 
-    1. **Geração de Planejamento**: Criação de planos com base em descrições e imagens
-    2. **Tarefas Geradas**: Gerenciamento de tarefas criadas a partir dos planos
+# Exibir informações técnicas em expansor
+with st.expander("Informações Técnicas", expanded=False):
+    st.write("**Caminhos de Importação:**")
+    for path in sys.path[:5]:  # Mostrar apenas os primeiros 5 caminhos
+        st.code(path)
 
-    Esta aplicação permite o fluxo completo desde a criação do plano até
-    o acompanhamento e conclusão das tarefas.
-    """
-    )
+    st.write("**Variáveis de Sessão:**")
+    session_vars = [str(var) for var in st.session_state.keys()]
+    st.code(", ".join(session_vars))
+
+# Restaurar as funções originais do Streamlit ao final do script
+st.success = original_success
+st.info = original_info
+st.warning = original_warning
+st.error = original_error

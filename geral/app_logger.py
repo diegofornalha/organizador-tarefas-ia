@@ -2,6 +2,7 @@
 Módulo para gerenciamento de logs da aplicação.
 Fornece funcionalidades para registrar logs no estado da sessão do Streamlit e no console.
 """
+
 import streamlit as st
 import logging
 from datetime import datetime
@@ -10,6 +11,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def add_log(message):
     """
     Adiciona uma entrada de log ao estado da sessão e também ao logger do sistema.
@@ -17,7 +19,7 @@ def add_log(message):
     Args:
         message (str): Mensagem para registrar no log
     """
-    if 'logs' not in st.session_state:
+    if "logs" not in st.session_state:
         st.session_state.logs = []
 
     # Adicionar timestamp
@@ -34,6 +36,7 @@ def add_log(message):
     if len(st.session_state.logs) > 100:
         st.session_state.logs = st.session_state.logs[-100:]
 
+
 def get_logs(max_count=10):
     """
     Retorna os logs mais recentes do estado da sessão.
@@ -44,52 +47,54 @@ def get_logs(max_count=10):
     Returns:
         list: Lista com as entradas de log mais recentes
     """
-    if 'logs' not in st.session_state:
+    if "logs" not in st.session_state:
         return []
 
     # Retornar os logs mais recentes
     return st.session_state.logs[-max_count:]
 
+
 def clear_logs():
     """
     Limpa todos os logs do estado da sessão.
     """
-    if 'logs' in st.session_state:
+    if "logs" in st.session_state:
         st.session_state.logs = []
         logger.info("Logs limpos")
 
+
 def log_error(message):
     """
-    Registra uma mensagem de erro no log e exibe um erro no Streamlit.
+    Registra uma mensagem de erro no log sem exibir na interface.
 
     Args:
         message (str): Mensagem de erro
     """
     add_log(f"ERRO: {message}")
     logger.error(message)
-    st.error(message)
+
 
 def log_warning(message):
     """
-    Registra uma mensagem de aviso no log e exibe um aviso no Streamlit.
+    Registra uma mensagem de aviso no log sem exibir na interface.
 
     Args:
         message (str): Mensagem de aviso
     """
     add_log(f"AVISO: {message}")
     logger.warning(message)
-    st.warning(message)
+
 
 def log_success(message):
     """
-    Registra uma mensagem de sucesso no log e exibe uma mensagem de sucesso no Streamlit.
+    Registra uma mensagem de sucesso no log sem exibir na interface.
 
     Args:
         message (str): Mensagem de sucesso
     """
     add_log(message)
     logger.info(message)
-    st.success(message)
+
 
 def log_debug(message, show_ui=False):
     """
@@ -99,7 +104,7 @@ def log_debug(message, show_ui=False):
         message (str): Mensagem de debug
         show_ui (bool): Se deve exibir a mensagem na interface do Streamlit
     """
-    if 'debug_mode' in st.session_state and st.session_state.debug_mode:
+    if "debug_mode" in st.session_state and st.session_state.debug_mode:
         add_log(f"DEBUG: {message}")
         logger.debug(message)
 

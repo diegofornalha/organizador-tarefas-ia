@@ -51,7 +51,16 @@ if __name__ == "__main__":
     setattr(st, "_is_running_with_streamlit", True)
 
 # Importar os componentes APÓS a configuração
-from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
+try:
+    from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
+except ImportError:
+    import sys
+    import os
+    # Adicionar diretório pai ao path
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+    from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
 
 # Título da página
 st.title("📚 Demonstração do Histórico de Planos")

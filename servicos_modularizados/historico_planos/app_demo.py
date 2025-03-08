@@ -1,6 +1,7 @@
 """
 Aplicação de demonstração do módulo de histórico de planos.
 """
+
 import streamlit as st
 import json
 from datetime import datetime
@@ -8,13 +9,33 @@ from datetime import datetime
 # Configurar página APENAS quando este script é executado diretamente
 # Esta DEVE ser a primeira chamada Streamlit
 if __name__ == "__main__":
-    st.set_page_config(page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide")
+    st.set_page_config(
+        page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide"
+    )
 
     # Definir flag para indicar que estamos executando com o Streamlit
     setattr(st, "_is_running_with_streamlit", True)
 
 # Importar os componentes APÓS a configuração
-from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
+try:
+    from historico_planos import (
+        show_plans_history_sidebar,
+        show_plans_history_panel,
+        save_plan_to_history,
+    )
+except ImportError:
+    import sys
+    import os
+
+    # Adicionar diretório pai ao path
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+    from historico_planos import (
+        show_plans_history_sidebar,
+        show_plans_history_panel,
+        save_plan_to_history,
+    )
 
 # Título da página
 st.title("📚 Demonstração do Histórico de Planos")
@@ -23,10 +44,7 @@ st.title("📚 Demonstração do Histórico de Planos")
 show_plans_history_sidebar()
 
 # Conteúdo principal - Dividir em abas
-tab1, tab2 = st.tabs([
-    "✨ Criar Plano de Exemplo",
-    "📋 Visualizar Histórico Completo"
-])
+tab1, tab2 = st.tabs(["✨ Criar Plano de Exemplo", "📋 Visualizar Histórico Completo"])
 
 # Aba 1: Criar plano de exemplo
 with tab1:
@@ -38,7 +56,7 @@ with tab1:
         plan_title = st.text_input("Título do Plano", value="Meu Plano de Exemplo")
         plan_description = st.text_area(
             "Descrição do Plano",
-            value="Este é um plano de exemplo criado para demonstrar o funcionamento do histórico."
+            value="Este é um plano de exemplo criado para demonstrar o funcionamento do histórico.",
         )
 
         # Etapas do plano
@@ -50,12 +68,9 @@ with tab1:
             step_title = st.text_input(f"Etapa {i}", value=f"Etapa {i} de exemplo")
             step_description = st.text_area(
                 f"Descrição da Etapa {i}",
-                value=f"Descrição da etapa {i} do plano de exemplo"
+                value=f"Descrição da etapa {i} do plano de exemplo",
             )
-            steps.append({
-                "title": step_title,
-                "description": step_description
-            })
+            steps.append({"title": step_title, "description": step_description})
 
         # Botão para salvar
         submitted = st.form_submit_button("Salvar Plano no Histórico")
@@ -68,7 +83,7 @@ with tab1:
             "description": plan_description,
             "steps": steps,
             "created_at": datetime.now().isoformat(),
-            "source": "app_demo"
+            "source": "app_demo",
         }
 
         # Salvar no histórico
@@ -85,7 +100,8 @@ with tab2:
 
 # Exemplo de código
 with st.expander("Ver código de exemplo de uso"):
-    st.code("""
+    st.code(
+        """
 # Importar os componentes necessários
 from historico_planos import (
     show_plans_history_sidebar,
@@ -110,7 +126,9 @@ plan_data = {
     "created_at": "2023-07-15T10:30:00"
 }
 save_plan_to_history(plan_data)
-""", language="python")
+""",
+        language="python",
+    )
 
 if __name__ == "__main__":
     # Não precisamos usar main() aqui pois o código já está estruturado
