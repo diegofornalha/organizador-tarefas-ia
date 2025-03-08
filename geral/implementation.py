@@ -213,7 +213,12 @@ if show_plans_history_sidebar is not None:
     with st.sidebar:
         st.header("📚 historico_planos")
         # Botão de nova consulta ACIMA do divider
-        st.button("🔍 Nova Consulta", key="nova_consulta_planos")
+        if st.button("🔍 Nova Consulta", key="nova_consulta_planos"):
+            # Limpar o formulário e estado atual
+            if "last_plan" in st.session_state:
+                st.session_state.last_plan = None
+            # Forçar recarregamento da página
+            st.rerun()
         st.markdown("---")
         show_plans_history_sidebar()
 
@@ -223,7 +228,10 @@ if show_tasks_history_sidebar is not None:
     with st.sidebar:
         st.header("📝 historico_tarefas")
         # Botão de nova consulta ACIMA do divider
-        st.button("📊 Nova Consulta", key="nova_consulta_tarefas")
+        if st.button("📊 Nova Consulta", key="nova_consulta_tarefas"):
+            # Limpar qualquer estado relacionado a tarefas, se necessário
+            # Forçar recarregamento da página
+            st.rerun()
         st.markdown("---")
         show_tasks_history_sidebar()
 
