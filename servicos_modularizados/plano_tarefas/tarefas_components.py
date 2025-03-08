@@ -23,6 +23,7 @@ if GERAL_DIR not in sys.path:
 # Importar funcionalidades necessárias
 try:
     from geral.app_logger import log_success, log_error
+    from firebase_service import TaskStorageService
 except ImportError:
     # Funções padrão para uso quando as importações falham
     def log_success(message):
@@ -31,6 +32,36 @@ except ImportError:
     def log_error(message):
         print(f"ERROR: {message}")
 
+    # Importar TaskStorageService do arquivo local
+    try:
+        from firebase_service import TaskStorageService
+    except ImportError:
+        class TaskStorageService:
+            def __init__(self):
+                pass
+
+            def get_tasks(self):
+                if 'tasks' not in st.session_state:
+                    st.session_state.tasks = []
+                return st.session_state.tasks
+
+            def add_task(self, task_data):
+                if 'tasks' not in st.session_state:
+                    st.session_state.tasks = []
+                # Se já tiver um ID, usar; senão, gerar um novo
+                if 'id' not in task_data or not task_data['id']:
+                    task_data['id'] = str(uuid.uuid4())
+                st.session_state.tasks.append(task_data)
+                return task_data['id']
+
+            def update_task(self, task_id, task_data):
+                return True
+
+            def delete_task(self, task_id):
+                return True
+
+# Inicializar o serviço de armazenamento de tarefas
+task_storage = TaskStorageService()
 
 def criar_tarefas_do_plano(plan_data=None, container=None):
     """
@@ -54,13 +85,17 @@ def criar_tarefas_do_plano(plan_data=None, container=None):
 
     # Se ainda não tiver plano, avisar e retornar False
     if not plan_data:
-        ui.warning(
-            "Nenhum plano disponível. Gere um plano primeiro na aba 'Geração de Planejamento'."
-        )
+        msg = ("Nenhum plano disponível. Gere um plano primeiro na "
+              "aba 'Geração de Planejamento'.")
+        ui.warning(msg)
         return False
 
     try:
-        plan_text = plan_data if isinstance(plan_data, str) else json.dumps(plan_data)
+        # Convertendo para texto se for objeto
+        if isinstance(plan_data, str):
+            plan_text = plan_data
+        else:
+            plan_text = json.dumps(plan_data)
 
         # Extrair o JSON se estiver em um código markdown
         json_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", plan_text)
@@ -106,17 +141,14 @@ def criar_tarefas_do_plano(plan_data=None, container=None):
                     }
                     tarefa["subtarefas"].append(subtarefa)
 
+            # Adicionar a tarefa usando o serviço de armazenamento
+            task_storage.add_task(tarefa)
             novas_tarefas.append(tarefa)
 
-        # Inicializar a lista de tarefas se não existir
-        if "tasks" not in st.session_state:
-            st.session_state.tasks = []
-
-        # Adicionar as novas tarefas à lista existente
-        st.session_state.tasks.extend(novas_tarefas)
-        log_success(
-            f"Adicionadas {len(novas_tarefas)} tarefas do plano '{plano_titulo}'"
-        )
+        # Mensagem de sucesso
+        sucesso_msg = (f"Adicionadas {len(novas_tarefas)} tarefas "
+                      f"do plano '{plano_titulo}'")
+        log_success(sucesso_msg)
 
         return True
     except Exception as e:
@@ -127,7 +159,8 @@ def criar_tarefas_do_plano(plan_data=None, container=None):
 
 def exibir_tarefa(tarefa, index, container=None):
     """
-    Exibe uma tarefa na interface com opções para marcar como concluída e excluir.
+    Exibe uma tarefa na interface com opções para marcar como concluída
+    e excluir.
     """
     # Escolher onde renderizar
     ui = container if container else st
@@ -143,8 +176,11 @@ def exibir_tarefa(tarefa, index, container=None):
 
         with cols[0]:
             # Mostrar detalhes da tarefa
-            ui.markdown(f"**Descrição:** {tarefa.get('descricao', 'Sem descrição')}")
-            ui.markdown(f"**Prioridade:** {tarefa.get('prioridade', 'Normal')}")
+            descricao = tarefa.get('descricao', 'Sem descrição')
+            ui.markdown(f"**Descrição:** {descricao}")
+
+            prioridade = tarefa.get('prioridade', 'Normal')
+            ui.markdown(f"**Prioridade:** {prioridade}")
 
             # Mostrar subtarefas se existirem
             if "subtarefas" in tarefa and tarefa["subtarefas"]:
@@ -155,35 +191,39 @@ def exibir_tarefa(tarefa, index, container=None):
                     subcols = ui.columns([0.1, 3.9])
                     with subcols[0]:
                         sub_completed = subtarefa.get("completed", False)
-                        if ui.checkbox(
-                            "", value=sub_completed, key=f"sub_{subtarefa['id']}"
-                        ):
+                        sub_id = subtarefa['id']
+                        if ui.checkbox("", value=sub_completed,
+                                      key=f"sub_{sub_id}"):
                             if not sub_completed:
                                 subtarefa["completed"] = True
+                                # Atualizar a tarefa principal no armazenamento
+                                task_storage.update_task(tarefa["id"], tarefa)
                                 st.rerun()
 
                     with subcols[1]:
                         sub_status = "~~" if subtarefa.get("completed", False) else ""
-                        ui.markdown(
-                            f"{sub_status}{subtarefa.get('titulo', 'Subtarefa')}{sub_status}"
-                        )
+                        sub_titulo = subtarefa.get('titulo', 'Subtarefa')
+                        ui.markdown(f"{sub_status}{sub_titulo}{sub_status}")
 
         with cols[1]:
             # Ações da tarefa
             if not tarefa.get("completed", False):
                 if ui.button("Concluir", key=f"complete_{tarefa['id']}"):
                     tarefa["completed"] = True
+                    # Atualizar a tarefa no armazenamento
+                    task_storage.update_task(tarefa["id"], tarefa)
                     st.rerun()
             else:
                 if ui.button("Reabrir", key=f"reopen_{tarefa['id']}"):
                     tarefa["completed"] = False
+                    # Atualizar a tarefa no armazenamento
+                    task_storage.update_task(tarefa["id"], tarefa)
                     st.rerun()
 
             if ui.button("Excluir", key=f"delete_{tarefa['id']}"):
-                # Remover a tarefa da lista
-                if index < len(st.session_state.tasks):
-                    st.session_state.tasks.pop(index)
-                    st.rerun()
+                # Remover a tarefa usando o serviço de armazenamento
+                task_storage.delete_task(tarefa["id"])
+                st.rerun()
 
 
 def tasks_ui(container=None):
@@ -198,13 +238,16 @@ def tasks_ui(container=None):
     # Escolher onde renderizar
     ui = container if container else st
 
+    # Obter tarefas do serviço de armazenamento
+    tarefas = task_storage.get_tasks()
+
     # Exibir lista de tarefas
-    if "tasks" not in st.session_state or not st.session_state.tasks:
-        ui.info(
-            "Nenhuma tarefa criada. Use a aba 'Geração de Planejamento' para criar um plano e gerar tarefas."
-        )
+    if not tarefas:
+        msg = ("Nenhuma tarefa criada. Use a aba 'Geração de Planejamento' "
+              "para criar um plano e gerar tarefas.")
+        ui.info(msg)
     else:
-        ui.subheader(f"Suas Tarefas ({len(st.session_state.tasks)})")
+        ui.subheader(f"Suas Tarefas ({len(tarefas)})")
 
         # Opções de visualização
         view = ui.radio(
@@ -216,24 +259,26 @@ def tasks_ui(container=None):
 
         # Filtrar tarefas conforme seleção
         if view == "Todas":
-            filtered_tasks = st.session_state.tasks
+            filtered_tasks = tarefas
         elif view == "Pendentes":
             filtered_tasks = [
-                t for t in st.session_state.tasks if not t.get("completed", False)
+                t for t in tarefas if not t.get("completed", False)
             ]
         else:  # Concluídas
             filtered_tasks = [
-                t for t in st.session_state.tasks if t.get("completed", False)
+                t for t in tarefas if t.get("completed", False)
             ]
 
         ui.write(f"Mostrando {len(filtered_tasks)} tarefas")
 
         # Exibir tarefas
         for i, tarefa in enumerate(filtered_tasks):
-            exibir_tarefa(tarefa, st.session_state.tasks.index(tarefa), container=ui)
+            exibir_tarefa(tarefa, i, container=ui)
 
         # Botão para limpar todas as tarefas
         if ui.button("Limpar Todas as Tarefas"):
             if ui.warning("Tem certeza? Esta ação não pode ser desfeita."):
-                st.session_state.tasks = []
+                # Remover todas as tarefas uma a uma
+                for tarefa in tarefas[:]:  # Cópia da lista para evitar problemas
+                    task_storage.delete_task(tarefa["id"])
                 st.rerun()

@@ -12,6 +12,8 @@ import contextlib
 from datetime import datetime
 import subprocess
 from dotenv import load_dotenv
+import json
+import re
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -42,16 +44,50 @@ sys.path.insert(
         os.path.dirname(os.path.abspath(__file__)),
         "..",
         "servicos_modularizados",
-        "plano_tarefas",
     ),
 )
 try:
-    from planejamento_components import planning_ui
-    from tarefas_components import tasks_ui, criar_tarefas_do_plano
+    from servicos_modularizados.plano_tarefas.planejamento_components import planning_ui
+    from servicos_modularizados.plano_tarefas.tarefas_components import (
+        tasks_ui,
+        criar_tarefas_do_plano,
+    )
 except ImportError:
     planning_ui = None
     tasks_ui = None
     criar_tarefas_do_plano = None
+
+# Import para os componentes de historico_planos
+servicos_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "servicos_modularizados"
+)
+if servicos_path not in sys.path:
+    sys.path.insert(0, servicos_path)
+
+try:
+    from servicos_modularizados.historico_planos import (
+        show_plans_history_sidebar,
+        show_plans_history_panel,
+        save_plan_to_history,
+    )
+except ImportError:
+    show_plans_history_sidebar = None
+    show_plans_history_panel = None
+    save_plan_to_history = None
+
+# Import para os componentes de historico_tarefas
+try:
+    from servicos_modularizados.historico_tarefas import (
+        show_tasks_history_sidebar,
+        show_tasks_history_panel,
+        show_tasks_analytics,
+        record_task_event,
+    )
+except ImportError:
+    show_tasks_history_sidebar = None
+    show_tasks_history_panel = None
+    show_tasks_analytics = None
+    record_task_event = None
 
 
 # Função para capturar saída padrão (para logs)
@@ -170,6 +206,26 @@ with st.expander("Logs do Sistema", expanded=False):
             original_info("Nenhum log disponível.")
         else:
             st.write("Nenhum log disponível.")
+
+# Histórico de Planos na barra lateral
+if show_plans_history_sidebar is not None:
+    # Adicionar histórico de planos na barra lateral
+    with st.sidebar:
+        st.header("📚 historico_planos")
+        # Botão de nova consulta ACIMA do divider
+        st.button("🔍 Nova Consulta", key="nova_consulta_planos")
+        st.markdown("---")
+        show_plans_history_sidebar()
+
+# Histórico de Tarefas na barra lateral
+if show_tasks_history_sidebar is not None:
+    # Adicionar histórico de tarefas na barra lateral
+    with st.sidebar:
+        st.header("📝 historico_tarefas")
+        # Botão de nova consulta ACIMA do divider
+        st.button("📊 Nova Consulta", key="nova_consulta_tarefas")
+        st.markdown("---")
+        show_tasks_history_sidebar()
 
 # Layout principal com colunas
 col1, col2 = st.columns([1, 2])
@@ -460,46 +516,147 @@ if available_modules:
                             )
                     else:
                         # Interface completa com abas
-                        plan_tab, task_tab = st.tabs(["Planejamento", "Tarefas"])
 
-                        with plan_tab:
+                        # Determinar qual aba deve estar ativa
+                        if "active_tab" not in st.session_state:
+                            st.session_state.active_tab = "planejamento"
+
+                        # Botões para controlar a navegação entre abas
+                        tab_options = ["Planejamento", "Histórico de Planos"]
+
+                        # Exibir botões de navegação apenas se não estiver na seção de histórico de planos
+                        if st.session_state.active_tab != "historico":
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button(
+                                    "📝 Planejamento",
+                                    use_container_width=True,
+                                    type=(
+                                        "primary"
+                                        if st.session_state.active_tab == "planejamento"
+                                        else "secondary"
+                                    ),
+                                ):
+                                    st.session_state.active_tab = "planejamento"
+                                    st.rerun()
+                            with col2:
+                                if st.button(
+                                    "📚 Histórico",
+                                    use_container_width=True,
+                                    type=(
+                                        "primary"
+                                        if st.session_state.active_tab == "historico"
+                                        else "secondary"
+                                    ),
+                                ):
+                                    st.session_state.active_tab = "historico"
+                                    st.rerun()
+
+                        # Mostrar conteúdo baseado na aba ativa
+                        if st.session_state.active_tab == "planejamento":
+                            st.header("📝 Planejamento")
                             # Usar o componente de planejamento
                             planning_container = st.container()
-                            plan_data = planning_ui(planning_container)
+                            plan_result = planning_ui(planning_container)
 
-                            # Se um plano foi criado, armazenar na sessão para uso em tarefas
-                            if plan_data and isinstance(plan_data, dict):
-                                if "current_plan" not in st.session_state:
-                                    st.session_state.current_plan = plan_data
-                                elif st.session_state.current_plan.get(
-                                    "id"
-                                ) != plan_data.get("id"):
-                                    st.session_state.current_plan = plan_data
+                            # O planning_ui retorna uma tupla (plan_image, plan_result)
+                            # Precisamos extrair o plan_result (texto JSON ou resposta)
+                            if (
+                                plan_result
+                                and isinstance(plan_result, tuple)
+                                and len(plan_result) == 2
+                            ):
+                                plan_image, plan_text = plan_result
 
-                                # Verificar se temos a função para criar tarefas
-                                if criar_tarefas_do_plano is not None:
-                                    criar_tarefas_do_plano(plan_data)
+                                # Se temos um plano, tentar processá-lo
+                                if plan_text:
+                                    try:
+                                        # Tentar extrair JSON do texto se estiver entre ```json e ```
+                                        json_match = re.search(
+                                            r"```(?:json)?\s*([\s\S]*?)\s*```",
+                                            plan_text,
+                                        )
 
-                        with task_tab:
-                            # Verificar se temos um plano selecionado
-                            current_plan = st.session_state.get("current_plan", None)
+                                        if json_match:
+                                            json_content = json_match.group(1)
+                                            plan_data = json.loads(json_content)
+                                        else:
+                                            # Tentar carregar diretamente como JSON
+                                            plan_data = json.loads(plan_text)
 
-                            if current_plan:
-                                st.write(
-                                    f"📘 Plano atual: **{current_plan.get('title', 'Sem título')}**"
+                                        # Agora temos um plan_data como dicionário que podemos processar
+                                        if "current_plan" not in st.session_state:
+                                            st.session_state.current_plan = plan_data
+                                        elif st.session_state.current_plan.get(
+                                            "id", ""
+                                        ) != plan_data.get("id", ""):
+                                            st.session_state.current_plan = plan_data
+
+                                        # Salvar no histórico (se disponível)
+                                        if save_plan_to_history is not None:
+                                            try:
+                                                save_plan_to_history(plan_data)
+                                                log_success("Plano salvo no histórico")
+
+                                                # Mostrar mensagem de sucesso sem mudar para a aba de histórico
+                                                st.success(
+                                                    "✅ Plano salvo no histórico com sucesso! As tarefas estão disponíveis abaixo."
+                                                )
+                                                # Não mudamos mais de aba, permanecemos na tela com as tarefas
+                                                # st.session_state.active_tab = "historico"
+                                                # st.rerun()
+                                            except Exception as e:
+                                                log_error(
+                                                    f"Erro ao salvar plano no histórico: {str(e)}"
+                                                )
+
+                                        # Verificar se temos a função para criar tarefas
+                                        if criar_tarefas_do_plano is not None:
+                                            criar_tarefas_do_plano(plan_data)
+                                    except Exception as e:
+                                        log_error(f"Erro ao processar plano: {str(e)}")
+                                        st.error(
+                                            f"Não foi possível processar o plano: {str(e)}"
+                                        )
+
+                                # Adicionar uma separação visual antes das tarefas
+                                st.markdown("---")
+
+                                # Seção de tarefas abaixo do planejamento
+                                st.header("✅ Tarefas")
+                                # Verificar se temos um plano selecionado
+                                current_plan = st.session_state.get(
+                                    "current_plan", None
                                 )
 
-                            # Usar o componente de tarefas
-                            tasks_container = st.container()
-                            tasks_ui(tasks_container)
+                                if current_plan:
+                                    st.write(
+                                        f"📘 Plano atual: **{current_plan.get('title', 'Sem título')}**"
+                                    )
 
-                        # Links para acessar a aplicação completa (mantidos para compatibilidade)
-                        port = MODULE_PORTS.get(module_name)
-                        if port:
-                            st.write("---")
-                            st.markdown(
-                                f"🔗 [Acessar aplicação completa](http://localhost:{port}) - Serviço disponível na porta {port}"
-                            )
+                                # Usar o componente de tarefas
+                                tasks_container = st.container()
+                                tasks_ui(tasks_container)
+
+                        elif st.session_state.active_tab == "historico":
+                            st.header("📚 Histórico de Planos")
+                            # Verificar se o componente de histórico está disponível
+                            if show_plans_history_panel is not None:
+                                # Usar o componente de histórico de planos
+                                history_container = st.container()
+                                show_plans_history_panel(history_container)
+                            else:
+                                st.error(
+                                    "Componente de histórico de planos não disponível"
+                                )
+                                st.write(
+                                    "Verifique se o módulo historico_planos está instalado corretamente"
+                                )
+                                port_historico = MODULE_PORTS.get("historico_planos")
+                                if port_historico:
+                                    st.markdown(
+                                        f"[Acessar histórico completo](http://localhost:{port_historico})"
+                                    )
 
                 elif module_name == "analise_imagem":
                     st.subheader("Análise de Imagem")
@@ -536,29 +693,61 @@ if available_modules:
                             st.write(f"🔗 Serviço disponível na porta {port}")
 
                 elif module_name == "historico_planos":
-                    st.subheader("Histórico de Planos")
+                    st.subheader("📚 historico_planos")
                     st.write("Este módulo gerencia o histórico de planos gerados.")
 
-                    port = MODULE_PORTS.get(module_name)
-                    if port:
-                        if st.button(
-                            "Iniciar aplicação", key=f"start_app_{module_name}"
-                        ):
-                            st.markdown(f"[Abrir aplicação](http://localhost:{port})")
+                    # Verificar se o componente de histórico está disponível
+                    if show_plans_history_panel is not None:
+                        # Usar o componente de histórico de planos
+                        history_container = st.container()
+                        show_plans_history_panel(history_container)
+                    else:
+                        st.error("Componente de histórico de planos não disponível")
+                        st.write(
+                            "Verifique se o módulo historico_planos está instalado corretamente"
+                        )
+                        port = MODULE_PORTS.get(module_name)
+                        if port:
+                            st.markdown(
+                                f"[Abrir aplicação completa](http://localhost:{port})"
+                            )
                             st.write(f"🔗 Serviço disponível na porta {port}")
 
                 elif module_name == "historico_tarefas":
-                    st.subheader("Histórico de Tarefas")
+                    st.subheader("📝 historico_tarefas")
                     st.write(
                         "Este módulo gerencia o histórico de tarefas criadas e executadas."
                     )
 
-                    port = MODULE_PORTS.get(module_name)
-                    if port:
-                        if st.button(
-                            "Iniciar aplicação", key=f"start_app_{module_name}"
-                        ):
-                            st.markdown(f"[Abrir aplicação](http://localhost:{port})")
+                    # Verificar se os componentes de histórico estão disponíveis
+                    if (
+                        show_tasks_history_panel is not None
+                        and show_tasks_analytics is not None
+                    ):
+                        # Criar abas para diferentes visualizações
+                        history_tab, analytics_tab = st.tabs(
+                            ["Histórico de Tarefas", "Análises de Produtividade"]
+                        )
+
+                        # Tab 1: Histórico de Tarefas
+                        with history_tab:
+                            history_container = st.container()
+                            show_tasks_history_panel(history_container)
+
+                        # Tab 2: Análises
+                        with analytics_tab:
+                            analytics_container = st.container()
+                            show_tasks_analytics(analytics_container)
+                    else:
+                        st.error("Componentes de histórico de tarefas não disponíveis")
+                        st.write(
+                            "Verifique se o módulo historico_tarefas está instalado corretamente"
+                        )
+                        port = MODULE_PORTS.get(module_name)
+                        if port:
+                            st.markdown(
+                                f"[Abrir aplicação completa](http://localhost:{port})"
+                            )
                             st.write(f"🔗 Serviço disponível na porta {port}")
 
                 elif module_name == "geral":

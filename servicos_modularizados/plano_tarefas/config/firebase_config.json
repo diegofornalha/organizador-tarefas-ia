@@ -1,0 +1,7 @@
+{
+  "firebase": {
+    "use_root_service": true,
+    "collection_name": "todos",
+    "local_storage": true
+  }
+}

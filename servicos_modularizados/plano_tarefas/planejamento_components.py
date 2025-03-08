@@ -104,7 +104,7 @@ def planning_ui(container=None):
             if not project_description:
                 ui.error("Por favor, forneça uma descrição do projeto.")
             else:
-                with ui.spinner("Gerando plano de tarefas..."):
+                with st.spinner("Gerando plano de tarefas..."):
                     try:
                         # Garantir que o serviço exista na sessão
                         if "image_analysis_service" not in st.session_state:

@@ -23,11 +23,18 @@ echo "PYTHONPATH: $PYTHONPATH"
 
 # Verificar dependências essenciais
 if ! pip list | grep -q "streamlit"; then
-    echo "Instalando dependências necessárias..."
+    echo "Instalando dependências básicas necessárias..."
     pip install streamlit python-dotenv google-generativeai Pillow
 fi
 
+# Verificar dependências do Firebase
+if ! pip list | grep -q "firebase-admin"; then
+    echo "Instalando dependências do Firebase..."
+    pip install firebase-admin==6.2.0
+fi
+
 echo "===== Iniciando aplicação integrada de planejamento e tarefas ====="
+echo "Esta versão inclui persistência das tarefas no Firestore!"
 
 # Executando o Streamlit na porta 8511 para evitar conflitos
 streamlit run app.py --server.port=8511

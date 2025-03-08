@@ -215,70 +215,70 @@ if not components_loaded:
         st.write("❌ Não foi possível carregar todos os componentes necessários.")
     st.stop()
 
-# Interface principal com abas
-tab1, tab2 = st.tabs(["Planejamento", "Tarefas"])
+# Interface principal sem abas (layout vertical)
+st.header("📝 Planejamento")
+try:
+    # Importar o componente sob demanda
+    from planejamento_components import planning_ui
 
-with tab1:
-    st.header("📝 Planejamento")
+    # Usar o componente
+    planning_container = st.container()
+    plan_data = planning_ui(planning_container)
+
+    # Se um plano foi criado, armazenar na sessão para uso em tarefas
+    if plan_data and isinstance(plan_data, dict):
+        if "current_plan" not in st.session_state:
+            st.session_state.current_plan = plan_data
+        elif st.session_state.current_plan.get("id") != plan_data.get("id"):
+            st.session_state.current_plan = plan_data
+
+        # Salvar no histórico (se disponível)
+        if save_plan_to_history is not None:
+            try:
+                save_plan_to_history(plan_data)
+                log_success("Plano salvo no histórico")
+            except Exception as e:
+                log_error(f"Erro ao salvar plano no histórico: {str(e)}")
+except Exception as e:
+    # Aqui usamos o original_error diretamente para esta única notificação crítica
+    if original_error is not None and original_error != st.error:
+        original_error(f"Erro ao carregar componente de planejamento: {str(e)}")
+    else:
+        st.write(f"❌ Erro ao carregar componente de planejamento: {str(e)}")
+
+# Adicionar uma separação visual
+st.markdown("---")
+
+# Seção de tarefas abaixo do planejamento
+st.header("✅ Tarefas")
+try:
+    # Importar o componente sob demanda
+    from tarefas_components import tasks_ui
+
+    # Verificar se temos um plano selecionado
+    current_plan = st.session_state.get("current_plan", None)
+
+    if current_plan:
+        # Evitando st.info diretamente
+        st.write(f"📘 Plano atual: **{current_plan.get('title', 'Sem título')}**")
+
+    # Usar o componente de tarefas
+    tasks_container = st.container()
+    # Passar apenas o ID do plano se o componente aceitar esse parâmetro
     try:
-        # Importar o componente sob demanda
-        from planejamento_components import planning_ui
-
-        # Usar o componente
-        planning_container = st.container()
-        plan_data = planning_ui(planning_container)
-
-        # Se um plano foi criado, armazenar na sessão para uso em tarefas
-        if plan_data and isinstance(plan_data, dict):
-            if "current_plan" not in st.session_state:
-                st.session_state.current_plan = plan_data
-            elif st.session_state.current_plan.get("id") != plan_data.get("id"):
-                st.session_state.current_plan = plan_data
-
-            # Salvar no histórico (se disponível)
-            if save_plan_to_history is not None:
-                try:
-                    save_plan_to_history(plan_data)
-                    log_success("Plano salvo no histórico")
-                except Exception as e:
-                    log_error(f"Erro ao salvar plano no histórico: {str(e)}")
-    except Exception as e:
-        # Aqui usamos o original_error diretamente para esta única notificação crítica
-        if original_error is not None and original_error != st.error:
-            original_error(f"Erro ao carregar componente de planejamento: {str(e)}")
-        else:
-            st.write(f"❌ Erro ao carregar componente de planejamento: {str(e)}")
-
-with tab2:
-    st.header("✅ Tarefas")
-    try:
-        # Importar o componente sob demanda
-        from tarefas_components import tasks_ui
-
-        # Verificar se temos um plano selecionado
-        current_plan = st.session_state.get("current_plan", None)
-
         if current_plan:
-            # Evitando st.info diretamente
-            st.write(f"📘 Plano atual: **{current_plan.get('title', 'Sem título')}**")
-
-        # Usar o componente de tarefas
-        tasks_container = st.container()
-        # Passar apenas o ID do plano se o componente aceitar esse parâmetro
-        try:
-            if current_plan:
-                tasks_ui(tasks_container, current_plan.get("id"))
-            else:
-                tasks_ui(tasks_container)
-        except TypeError:
-            # Se o componente não aceitar o ID, chamá-lo sem esse parâmetro
-            tasks_ui(tasks_container)
-    except Exception as e:
-        # Aqui usamos o original_error diretamente para esta única notificação crítica
-        if original_error is not None and original_error != st.error:
-            original_error(f"Erro ao carregar componente de tarefas: {str(e)}")
+            tasks_ui(tasks_container, current_plan.get("id"))
         else:
-            st.write(f"❌ Erro ao carregar componente de tarefas: {str(e)}")
+            tasks_ui(tasks_container)
+    except TypeError:
+        # Se o componente não aceitar o ID do plano como parâmetro
+        tasks_ui(tasks_container)
+except Exception as e:
+    # Aqui usamos o original_error diretamente para esta única notificação crítica
+    if original_error is not None and original_error != st.error:
+        original_error(f"Erro ao carregar componente de tarefas: {str(e)}")
+    else:
+        st.write(f"❌ Erro ao carregar componente de tarefas: {str(e)}")
 
 # Rodapé
 st.write("---")

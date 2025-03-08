@@ -38,7 +38,7 @@ except ImportError:
     )
 
 # Título da página
-st.title("📚 Demonstração do Histórico de Planos")
+st.title("📚 historico_planos")
 
 # Exibir o histórico na barra lateral
 show_plans_history_sidebar()

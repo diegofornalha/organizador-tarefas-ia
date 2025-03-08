@@ -62,7 +62,7 @@ def image_analysis_ui(container=None):
         if ui.button("Analisar Imagem"):
             add_log(f"Iniciando análise de imagem: {options}")
 
-            with ui.spinner("Processando imagem..."):
+            with st.spinner("Processando imagem..."):
                 try:
                     # Garantir que o serviço exista na sessão
                     if "image_analysis_service" not in st.session_state:

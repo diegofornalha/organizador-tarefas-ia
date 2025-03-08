@@ -57,18 +57,21 @@ def show_plans_history_sidebar(
     # Escolher onde renderizar
     ui = container if container else st.sidebar
 
-    # Botão para Nova Consulta
-    if ui.button("🔄 Nova Consulta", use_container_width=True):
+    # Botão "Nova Consulta" removido daqui e colocado acima do divider no implementation.py
+
+    # Chamar função de callback, se fornecida
+    if (
+        on_new_query_click
+        and "nova_consulta_planos" in st.session_state
+        and st.session_state.nova_consulta_planos
+    ):
         # Limpar o formulário e estado atual
         if "last_plan" in st.session_state:
             st.session_state.last_plan = None
-
-        # Chamar função de callback, se fornecida
-        if on_new_query_click:
-            on_new_query_click()
-
-        # Forçar recarregamento da página
-        st.rerun()
+        # Chamar a função de callback
+        on_new_query_click()
+        # Resetar o estado do botão após processar
+        st.session_state.nova_consulta_planos = False
 
     ui.header("📚 Histórico de Planos")
 
@@ -88,7 +91,7 @@ def show_plans_history_sidebar(
                     value=plano_info.get("json", "{}"),
                     height=200,
                     disabled=True,
-                    key=f"plano_json_{i}",
+                    key=f"plano_json_sidebar_{i}_{id(ui)}",
                 )
 
     # Botão para limpar histórico
@@ -108,7 +111,7 @@ def show_plans_history_panel(container=None):
     # Escolher onde renderizar
     ui = container if container else st
 
-    ui.header("📚 Histórico de Planos")
+    ui.header("📚 historico_planos")
 
     # Carregar histórico
     ensure_plans_history_loaded()
@@ -120,10 +123,16 @@ def show_plans_history_panel(container=None):
     # Adicionar filtros
     col1, col2 = ui.columns([2, 1])
     with col1:
-        filtro = ui.text_input("Buscar planos", placeholder="Digite para filtrar...")
+        filtro = ui.text_input(
+            "Buscar planos",
+            placeholder="Digite para filtrar...",
+            key=f"buscar_planos_{id(container)}",
+        )
     with col2:
         ordem = ui.selectbox(
-            "Ordenar por", ["Mais recentes", "Mais antigos", "Alfabética"]
+            "Ordenar por",
+            ["Mais recentes", "Mais antigos", "Alfabética"],
+            key=f"ordenar_planos_{id(container)}",
         )
 
     # Aplicar filtros e ordenação
@@ -160,14 +169,57 @@ def show_plans_history_panel(container=None):
                 unsafe_allow_html=True,
             )
 
-            # Botões de ação
-            btn_col1, btn_col2 = st.columns(2)
+            # Botões de ação para o card do plano na grade
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
             with btn_col1:
-                if st.button("🔍 Ver Detalhes", key=f"ver_{i}"):
+                if st.button(
+                    "🔍 Ver",
+                    key=f"ver_grade_{i}_{id(container)}",
+                    use_container_width=True,
+                ):
                     st.session_state.plano_selecionado = plano
                     st.rerun()
             with btn_col2:
-                if st.button("❌ Excluir", key=f"excluir_{i}"):
+                if st.button(
+                    "📋 Tarefas",
+                    key=f"tarefas_grade_{i}_{id(container)}",
+                    use_container_width=True,
+                ):
+                    try:
+                        # Verificar se a função criar_tarefas_do_plano está disponível
+                        from servicos_modularizados.plano_tarefas.tarefas_components import (
+                            criar_tarefas_do_plano,
+                        )
+
+                        # Obter o JSON do plano
+                        plano_json = plano.get("json", "{}")
+                        plano_data = json.loads(plano_json)
+
+                        # Criar tarefas a partir do plano
+                        sucesso = criar_tarefas_do_plano(plano_data)
+
+                        if sucesso:
+                            st.success(
+                                "✅ Tarefas criadas com sucesso! Você pode visualizá-las na tela de planejamento."
+                            )
+
+                            # Não redirecionamos mais automáticamente
+                            # Deixamos o usuário decidir quando ir para a tela de planejamento
+                            # if "active_tab" in st.session_state:
+                            #     st.session_state.active_tab = "planejamento"
+                            #     st.rerun()
+                        else:
+                            st.error("Não foi possível criar as tarefas.")
+                    except ImportError:
+                        st.error("Módulo de tarefas não disponível.")
+                    except Exception as e:
+                        st.error(f"Erro: {str(e)}")
+            with btn_col3:
+                if st.button(
+                    "❌ Excluir",
+                    key=f"excluir_grade_{i}_{id(container)}",
+                    use_container_width=True,
+                ):
                     remover_plano_do_historico(i)
                     st.success("Plano removido!")
                     st.rerun()
@@ -179,12 +231,60 @@ def show_plans_history_panel(container=None):
             ui.subheader(plano.get("titulo", "Plano sem título"))
             ui.caption(f"Data: {formatar_data(plano.get('data', ''))}")
 
+            # Botões de ação para o plano selecionado
+            btn_col1, btn_col2 = ui.columns(2)
+            with btn_col1:
+                if ui.button(
+                    "📋 Criar Tarefas",
+                    key=f"criar_tarefas_plano_{id(ui)}",
+                    type="primary",
+                ):
+                    try:
+                        # Verificar se a função criar_tarefas_do_plano está disponível
+                        from servicos_modularizados.plano_tarefas.tarefas_components import (
+                            criar_tarefas_do_plano,
+                        )
+
+                        # Obter o JSON do plano
+                        plano_json = plano.get("json", "{}")
+                        plano_data = json.loads(plano_json)
+
+                        # Criar tarefas a partir do plano
+                        sucesso = criar_tarefas_do_plano(plano_data)
+
+                        if sucesso:
+                            ui.success(
+                                "✅ Tarefas criadas com sucesso! Você pode visualizá-las na tela de planejamento."
+                            )
+
+                            # Não redirecionamos mais automáticamente
+                            # Deixamos o usuário decidir quando ir para a tela de planejamento
+                            # if "active_tab" in st.session_state:
+                            #     st.session_state.active_tab = "planejamento"
+                            #     st.rerun()
+                        else:
+                            ui.error(
+                                "Não foi possível criar as tarefas. Verifique o formato do plano."
+                            )
+                    except ImportError:
+                        ui.error(
+                            "Módulo de tarefas não disponível. Verifique se o módulo plano_tarefas está instalado."
+                        )
+                    except Exception as e:
+                        ui.error(f"Erro ao criar tarefas: {str(e)}")
+
+            with btn_col2:
+                if ui.button("Fechar Detalhes", key=f"fechar_detalhes_{id(ui)}"):
+                    st.session_state.plano_selecionado = None
+                    st.rerun()
+
             # Exibir JSON
             ui.text_area(
                 "JSON do Plano",
                 value=plano.get("json", "{}"),
                 height=300,
                 disabled=True,
+                key=f"json_plano_detalhe_{id(ui)}",
             )
 
             # Tentar exibir tarefas de forma estruturada
@@ -209,14 +309,13 @@ def show_plans_history_panel(container=None):
             except Exception as e:
                 ui.warning(f"Não foi possível processar detalhes do plano: {str(e)}")
 
-            # Botão para fechar detalhes
-            if ui.button("Fechar Detalhes"):
-                st.session_state.plano_selecionado = None
-                st.rerun()
-
     # Botão para limpar histórico
     if st.session_state.planos_historico:
-        if ui.button("🗑️ Limpar Todo o Histórico", type="primary"):
+        if ui.button(
+            "🗑️ Limpar Todo o Histórico",
+            type="primary",
+            key=f"limpar_historico_{id(ui)}",
+        ):
             clear_plans_history()
             ui.success("Histórico de planos limpo com sucesso!")
             if "plano_selecionado" in st.session_state:
