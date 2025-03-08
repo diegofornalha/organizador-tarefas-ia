@@ -52,6 +52,7 @@
       onCreate = {
         default.openFiles = [
           "README.md"
+          "run_all.sh"
           "src/services/task_service.py"
         ];
         terraform = ''
@@ -70,4 +71,4 @@
       };
     };
   };
-} 
+}
