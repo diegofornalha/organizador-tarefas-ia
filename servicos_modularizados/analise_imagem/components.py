@@ -115,8 +115,8 @@ def image_analysis_standalone():
     import streamlit as st
     from geral.app_logger import get_logs, clear_logs
 
-    # Configurar página
-    st.set_page_config(page_title="Análise de Imagem", page_icon="🔍", layout="wide")
+    # NÃO CONFIGURA MAIS A PÁGINA AQUI
+    # A configuração deve estar no arquivo principal (image_analysis.py)
 
     # Título da página
     st.title("🔍 Análise de Imagem")

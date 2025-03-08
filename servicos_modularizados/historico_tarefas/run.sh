@@ -42,13 +42,14 @@ except ImportError:
         sys.path.insert(0, module_path)
     import historico_tarefas
 
-# Configurar a página
-st.set_page_config(
-    page_title="Demo - Histórico de Tarefas",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Configurar a página apenas quando este script é executado diretamente
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Demo - Histórico de Tarefas",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
 
 # Estilo personalizado
 st.markdown("""

@@ -9,8 +9,13 @@ Este pacote contém:
 try:
     # Importar do módulo geral
     from .geral.app_logger import (
-        add_log, log_success, log_error, log_warning,
-        log_debug, get_logs, clear_logs
+        add_log,
+        log_success,
+        log_error,
+        log_warning,
+        log_debug,
+        get_logs,
+        clear_logs,
     )
     from .geral.image_analysis_service import ImageAnalysisService
     from .geral.history_service import HistoryService
@@ -19,12 +24,19 @@ try:
     # Definir __all__ para indicar o que é exportado pelo pacote
     __all__ = [
         # Logger
-        'add_log', 'log_success', 'log_error',
-        'log_warning', 'log_debug', 'get_logs', 'clear_logs',
+        "add_log",
+        "log_success",
+        "log_error",
+        "log_warning",
+        "log_debug",
+        "get_logs",
+        "clear_logs",
         # Serviços
-        'ImageAnalysisService', 'HistoryService',
+        "ImageAnalysisService",
+        "HistoryService",
         # Componentes UI
-        'show_history_sidebar', 'show_service_selector'
+        "show_history_sidebar",
+        "show_service_selector",
     ]
 except ImportError:
     # Se não conseguir importar, é porque está sendo usado isoladamente

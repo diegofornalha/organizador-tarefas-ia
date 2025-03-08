@@ -14,22 +14,25 @@ try:
 except ImportError:
     import sys
     import os
+
     # Adicionar diretório pai ao path
-    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     if module_path not in sys.path:
         sys.path.insert(0, module_path)
     import historico_tarefas
 
-# Configurar a página
-st.set_page_config(
-    page_title="Demo - Histórico de Tarefas",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Configurar a página apenas quando este script é executado diretamente
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Demo - Histórico de Tarefas",
+        page_icon="📊",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
 # Estilo personalizado
-st.markdown("""
+st.markdown(
+    """
 <style>
     .main .block-container {
         padding-top: 2rem;
@@ -49,28 +52,31 @@ st.markdown("""
         color: white;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 
 def main():
     # Título principal
     st.title("📊 Demonstração: Módulo de Histórico de Tarefas")
 
     # Informações sobre o módulo
-    st.info("""
+    st.info(
+        """
     **Módulo: historico_tarefas**
 
     Este módulo fornece funcionalidades para rastrear, visualizar e analisar
     o histórico de tarefas em uma aplicação Streamlit. Ele pode ser facilmente
     integrado a qualquer aplicação que precise manter um registro de atividades
     relacionadas a tarefas.
-    """)
+    """
+    )
 
     # Dividir em abas
-    tab1, tab2, tab3 = st.tabs([
-        "✨ Criação de Tarefas",
-        "📋 Visualização do Histórico",
-        "📊 Análises"
-    ])
+    tab1, tab2, tab3 = st.tabs(
+        ["✨ Criação de Tarefas", "📋 Visualização do Histórico", "📊 Análises"]
+    )
 
     # Tab 1: Criar tarefas de exemplo
     with tab1:
@@ -82,15 +88,14 @@ def main():
 
             # Campos do formulário
             titulo = st.text_input("Título da tarefa", value="Tarefa de exemplo")
-            descricao = st.text_area("Descrição", value="Descrição da tarefa de exemplo")
+            descricao = st.text_area(
+                "Descrição", value="Descrição da tarefa de exemplo"
+            )
             prioridade = st.select_slider(
-                "Prioridade",
-                options=["Baixa", "Média", "Alta"],
-                value="Média"
+                "Prioridade", options=["Baixa", "Média", "Alta"], value="Média"
             )
             data_vencimento = st.date_input(
-                "Data de vencimento",
-                value=datetime.now() + timedelta(days=7)
+                "Data de vencimento", value=datetime.now() + timedelta(days=7)
             )
 
             # Botões
@@ -107,7 +112,7 @@ def main():
                 task_id=task_id,
                 task_title=titulo,
                 event_type="created",
-                details=f"Prioridade: {prioridade}, Vencimento: {data_vencimento}"
+                details=f"Prioridade: {prioridade}, Vencimento: {data_vencimento}",
             )
             st.success(f"Tarefa '{titulo}' criada com sucesso!")
 
@@ -117,7 +122,7 @@ def main():
                     task_id=task_id,
                     task_title=titulo,
                     event_type="completed",
-                    details="Tarefa concluída na demonstração"
+                    details="Tarefa concluída na demonstração",
                 )
                 st.success(f"Tarefa '{titulo}' marcada como concluída!")
 
@@ -132,7 +137,7 @@ def main():
                     task_id=task_id,
                     task_title=task_title,
                     event_type="created",
-                    details=f"Tarefa automática criada na demonstração"
+                    details=f"Tarefa automática criada na demonstração",
                 )
 
                 # Algumas tarefas serão concluídas
@@ -141,7 +146,7 @@ def main():
                         task_id=task_id,
                         task_title=task_title,
                         event_type="completed",
-                        details="Concluída automaticamente na demonstração"
+                        details="Concluída automaticamente na demonstração",
                     )
 
                 # Uma tarefa será excluída
@@ -150,7 +155,7 @@ def main():
                         task_id=task_id,
                         task_title=task_title,
                         event_type="deleted",
-                        details="Excluída na demonstração"
+                        details="Excluída na demonstração",
                     )
 
             st.success("5 tarefas demonstrativas foram criadas com sucesso!")
@@ -176,7 +181,8 @@ def main():
     st.divider()
     st.subheader("Sobre a Implementação")
 
-    st.markdown("""
+    st.markdown(
+        """
     Este módulo implementa as seguintes funções principais:
 
     * `record_task_event()`: Registra eventos relacionados a tarefas
@@ -188,11 +194,13 @@ def main():
 
     O módulo suporta integração com Firestore para persistência dos dados,
     quando disponível, e também mantém os dados na session_state do Streamlit.
-    """)
+    """
+    )
 
     # Mostrar código de exemplo
     with st.expander("Ver exemplo de código de uso"):
-        st.code("""
+        st.code(
+            """
 # Importar o módulo
 import historico_tarefas
 
@@ -212,7 +220,10 @@ historico_tarefas.show_tasks_history_panel()
 
 # Exibir análises
 historico_tarefas.show_tasks_analytics()
-        """, language="python")
+        """,
+            language="python",
+        )
+
 
 if __name__ == "__main__":
     main()

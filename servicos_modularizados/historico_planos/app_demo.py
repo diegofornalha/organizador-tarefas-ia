@@ -1,13 +1,21 @@
 """
 Aplicação de demonstração do módulo de histórico de planos.
 """
+
 import streamlit as st
 import json
 from datetime import datetime
-from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
+from historico_planos import (
+    show_plans_history_sidebar,
+    show_plans_history_panel,
+    save_plan_to_history,
+)
 
-# Configurar página
-st.set_page_config(page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide")
+# Configurar página apenas quando este script é executado diretamente
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide"
+    )
 
 # Título da página
 st.title("📚 Demonstração do Histórico de Planos")
@@ -16,10 +24,7 @@ st.title("📚 Demonstração do Histórico de Planos")
 show_plans_history_sidebar()
 
 # Conteúdo principal - Dividir em abas
-tab1, tab2 = st.tabs([
-    "✨ Criar Plano de Exemplo",
-    "📋 Visualizar Histórico Completo"
-])
+tab1, tab2 = st.tabs(["✨ Criar Plano de Exemplo", "📋 Visualizar Histórico Completo"])
 
 # Aba 1: Criar plano de exemplo
 with tab1:
@@ -27,7 +32,10 @@ with tab1:
 
     # Formulário para criar um plano de exemplo
     titulo = st.text_input("Título do Plano", "Plano de Exemplo")
-    descricao = st.text_area("Descrição", "Este é um plano de exemplo criado para testar o módulo de histórico.")
+    descricao = st.text_area(
+        "Descrição",
+        "Este é um plano de exemplo criado para testar o módulo de histórico.",
+    )
 
     # Criar estrutura de tarefas de exemplo
     tarefas = [
@@ -37,8 +45,8 @@ with tab1:
             "prioridade": "alta",
             "subtarefas": [
                 {"titulo": "Subtarefa 1.1", "descricao": "Descrição da subtarefa 1.1"},
-                {"titulo": "Subtarefa 1.2", "descricao": "Descrição da subtarefa 1.2"}
-            ]
+                {"titulo": "Subtarefa 1.2", "descricao": "Descrição da subtarefa 1.2"},
+            ],
         },
         {
             "titulo": "Tarefa de exemplo 2",
@@ -46,16 +54,12 @@ with tab1:
             "prioridade": "média",
             "subtarefas": [
                 {"titulo": "Subtarefa 2.1", "descricao": "Descrição da subtarefa 2.1"}
-            ]
-        }
+            ],
+        },
     ]
 
     # Construir o plano completo
-    plano = {
-        "titulo": titulo,
-        "descricao": descricao,
-        "tarefas": tarefas
-    }
+    plano = {"titulo": titulo, "descricao": descricao, "tarefas": tarefas}
 
     # Exibir o JSON do plano
     with st.expander("Visualizar JSON do plano"):
@@ -66,7 +70,7 @@ with tab1:
         plano_info = {
             "titulo": plano["titulo"],
             "json": json.dumps(plano),
-            "data": datetime.now().isoformat()
+            "data": datetime.now().isoformat(),
         }
 
         if save_plan_to_history(plano_info):
@@ -82,7 +86,8 @@ with tab2:
 
 # Informações sobre o módulo
 with st.expander("Sobre este módulo"):
-    st.write("""
+    st.write(
+        """
     O módulo **Histórico de Planos** é uma biblioteca independente para gerenciar o histórico
     de planos gerados em qualquer aplicativo. Ele oferece:
 
@@ -92,11 +97,13 @@ with st.expander("Sobre este módulo"):
 
     Este módulo foi projetado para ser reutilizável e pode ser incorporado em qualquer
     aplicativo Streamlit que precise gerenciar histórico de planos.
-    """)
+    """
+    )
 
     # Exemplos de código de uso
     with st.expander("Exemplos de código"):
-        st.code("""
+        st.code(
+            """
 # Importar o módulo
 from historico_planos import (
     show_plans_history_sidebar,
@@ -125,4 +132,6 @@ planos = get_plans_history()
 
 # Limpar o histórico
 clear_plans_history()
-""", language="python")
+""",
+            language="python",
+        )

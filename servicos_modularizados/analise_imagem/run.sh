@@ -26,6 +26,7 @@ fi
 echo "===== Iniciando serviço de análise de imagem ====="
 
 # Executando o Streamlit com o arquivo de análise de imagem
-streamlit run image_analysis.py --server.port=8506
+# Usando porta 8507 para evitar conflitos
+streamlit run image_analysis.py --server.port=8507
 
 # Fim do script

@@ -36,8 +36,9 @@ import json
 from datetime import datetime
 from historico_planos import show_plans_history_sidebar, show_plans_history_panel, save_plan_to_history
 
-# Configurar página
-st.set_page_config(page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide")
+# Configurar página apenas quando este script é executado diretamente
+if __name__ == "__main__":
+    st.set_page_config(page_title="Demo de Histórico de Planos", page_icon="📚", layout="wide")
 
 # Título da página
 st.title("📚 Demonstração do Histórico de Planos")
